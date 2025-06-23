@@ -143,12 +143,11 @@
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Configuration ---
-        // The __firebase_config variable is for specific containerized environments.
-        // For GitHub Pages deployment, the placeholder '__FIREBASE_CONFIG_PLACEHOLDER__'
-        // will be replaced by a GitHub Action during the build process.
+        // The placeholder is now a raw variable name, NOT a string.
+        // It will be replaced with a full JSON object by the GitHub Action.
         const firebaseConfig = typeof __firebase_config !== 'undefined' 
             ? JSON.parse(__firebase_config) 
-            : JSON.parse('__FIREBASE_CONFIG_PLACEHOLDER__');
+            : __FIREBASE_CONFIG_PLACEHOLDER__;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'vinyl-scrobbler-dev';
 
         // --- Firebase Initialization ---
@@ -184,13 +183,14 @@
          */
         function initializeAppAndAuth() {
             try {
-                // Check if the placeholder is still there. If so, it means the app wasn't configured correctly.
-                if (firebaseConfig.apiKey === 'YOUR_API_KEY' || firebaseConfig.projectId === 'YOUR_PROJECT_ID' || JSON.stringify(firebaseConfig) === '"__FIREBASE_CONFIG_PLACEHOLDER__"') {
-                    console.error("Firebase config is not set up. Please configure the deployment action.");
-                    loginView.innerHTML = `
+                // Check if the placeholder is still the placeholder text.
+                // This would only happen if the script is run locally without a replacement.
+                if (typeof __FIREBASE_CONFIG_PLACEHOLDER__ !== 'undefined') {
+                    console.error("Firebase config is not set up. This is expected for local development without a replacement script.");
+                     loginView.innerHTML = `
                         <h1 class="text-4xl font-bold text-red-500">Configuration Error</h1>
                         <p class="text-gray-400 mt-2 mb-8">The Firebase configuration is missing. The application cannot start.</p>
-                        <p class="text-sm text-gray-500">Please ensure the deployment workflow is set up with the correct secrets.</p>
+                        <p class="text-sm text-gray-500">Please run with a replacement script or deploy via the GitHub Action.</p>
                     `;
                     return;
                 }
