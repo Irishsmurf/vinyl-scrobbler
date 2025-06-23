@@ -33,9 +33,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Inject Firebase Config
-        # This step uses a small Node.js script to perform the replacement.
-        # It's more robust than using 'sed' because it avoids shell expansion issues
-        # with special characters in the secret JSON.
         env:
           # Pass the secret into an environment variable for the script to use
           FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG }}
@@ -51,8 +48,13 @@ jobs:
               process.exit(1);
             }
 
-            // Replace the placeholder variable name directly with the JSON object string.
-            const newContent = content.replace(/__FIREBASE_CONFIG_PLACEHOLDER__/g, config);
+            // Create the string to replace, which is the full variable assignment
+            const placeholder = 'const firebaseConfig = \"__FIREBASE_CONFIG_PLACEHOLDER__\";';
+            // Create the final code line
+            const finalCode = 'const firebaseConfig = ' + config + ';';
+
+            // Replace the entire placeholder line with the final code
+            const newContent = content.replace(placeholder, finalCode);
             
             fs.writeFileSync(path, newContent);
             console.log('Firebase config injected successfully.');

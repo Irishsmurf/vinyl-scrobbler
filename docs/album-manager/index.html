@@ -143,11 +143,9 @@
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Configuration ---
-        // The placeholder is now a raw variable name, NOT a string.
-        // It will be replaced with a full JSON object by the GitHub Action.
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
-            ? JSON.parse(__firebase_config) 
-            : __FIREBASE_CONFIG_PLACEHOLDER__;
+        // This placeholder is now a string so it can be safely checked.
+        // The GitHub Action will replace this entire line with: const firebaseConfig = { ... };
+        const firebaseConfig = "__FIREBASE_CONFIG_PLACEHOLDER__";
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'vinyl-scrobbler-dev';
 
         // --- Firebase Initialization ---
@@ -183,9 +181,9 @@
          */
         function initializeAppAndAuth() {
             try {
-                // Check if the placeholder is still the placeholder text.
-                // This would only happen if the script is run locally without a replacement.
-                if (typeof __FIREBASE_CONFIG_PLACEHOLDER__ !== 'undefined') {
+                // This check now safely compares the variable to the placeholder string.
+                // It will be true when run locally, and false after the Action replaces the placeholder.
+                if (firebaseConfig === "__FIREBASE_CONFIG_PLACEHOLDER__") {
                     console.error("Firebase config is not set up. This is expected for local development without a replacement script.");
                      loginView.innerHTML = `
                         <h1 class="text-4xl font-bold text-red-500">Configuration Error</h1>
