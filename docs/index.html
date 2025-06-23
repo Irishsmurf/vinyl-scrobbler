@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web NFC Scrobbler</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+            color: #F9FAFB; /* text-gray-50 */
+        }
+        .scan-button {
+            background-color: #10B981; /* bg-emerald-500 */
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1), 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .scan-button:hover {
+            background-color: #059669; /* bg-emerald-600 */
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+        }
+        .scan-button:active {
+            transform: translateY(1px);
+        }
+        .status-box {
+            background-color: #1F2937; /* bg-gray-800 */
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <div class="text-center p-8 max-w-md w-full">
+        <header class="mb-10">
+            <h1 class="text-4xl font-bold text-gray-100">Vinyl Scrobbler</h1>
+            <p class="text-gray-400 mt-2">Tap a button, then tap an album.</p>
+        </header>
+
+        <main>
+            <button id="scanButton" class="scan-button w-full h-24 rounded-2xl text-white text-2xl font-bold flex items-center justify-center">
+                Scan Album
+            </button>
+
+            <div id="statusBox" class="status-box mt-8 p-6 rounded-lg min-h-[100px] flex flex-col items-center justify-center">
+                <p id="statusMessage" class="text-gray-300">Ready to scrobble.</p>
+                <p id="rfidValue" class="text-cyan-400 font-mono mt-2 text-sm break-all"></p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const scanButton = document.getElementById('scanButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const rfidValue = document.getElementById('rfidValue');
+        
+        // IMPORTANT: Replace this with the actual URL of your deployed HTTP Cloud Function
+        const CLOUD_FUNCTION_URL = 'YOUR_HTTP_CLOUD_FUNCTION_URL';
+
+        // Check for Web NFC availability
+        if (!('NDEFReader' in window)) {
+            scanButton.disabled = true;
+            statusMessage.textContent = 'Web NFC is not supported on this browser.';
+            scanButton.style.backgroundColor = '#4B5563'; // gray
+            scanButton.style.cursor = 'not-allowed';
+        }
+
+        scanButton.addEventListener('click', async () => {
+            if (CLOUD_FUNCTION_URL === 'YOUR_HTTP_CLOUD_FUNCTION_URL') {
+                statusMessage.textContent = 'Error: Cloud Function URL is not set.';
+                rfidValue.textContent = 'Please update the script.';
+                return;
+            }
+
+            statusMessage.textContent = 'User action required: Tap album to phone...';
+            rfidValue.textContent = '';
+
+            try {
+                const reader = new NDEFReader();
+                
+                // The scan() method returns a Promise that resolves when the scan is started.
+                await reader.scan();
+                console.log("NFC Scan started successfully.");
+
+                reader.addEventListener('error', (event) => {
+                    console.error('NFC Error:', event.message);
+                    statusMessage.textContent = 'An NFC error occurred.';
+                    rfidValue.textContent = event.message;
+                });
+
+                reader.addEventListener('reading', async ({ message, serialNumber }) => {
+                    console.log(`NFC Tag Read. Serial Number: ${serialNumber}`);
+                    
+                    // Format the serial number to match the ESP32 output (e.g., "AB CD 12 34")
+                    const formattedUid = serialNumber.split(':').join(' ').toUpperCase();
+                    
+                    statusMessage.textContent = 'Tag detected! Scrobbling...';
+                    rfidValue.textContent = `UID: ${formattedUid}`;
+
+                    // Send the UID to our gateway Cloud Function
+                    await triggerScrobble(formattedUid);
+                });
+
+            } catch (error) {
+                console.error('Error starting NFC scan:', error);
+                statusMessage.textContent = 'Could not start NFC scan.';
+                rfidValue.textContent = error.toString();
+            }
+        });
+
+        async function triggerScrobble(uid) {
+            try {
+                const response = await fetch(CLOUD_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ rfid: uid }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}`);
+                }
+
+                const result = await response.json();
+                console.log('Cloud function response:', result);
+                statusMessage.textContent = 'Success! Scrobble request sent.';
+                rfidValue.textContent = 'Check your Last.fm profile.';
+
+            } catch (error) {
+                console.error('Error triggering scrobble:', error);
+                statusMessage.textContent = 'Failed to send scrobble request.';
+                rfidValue.textContent = error.toString();
+            }
+        }
+    </script>
+</body>
+</html>
