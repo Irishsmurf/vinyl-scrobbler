@@ -51,9 +51,8 @@ jobs:
               process.exit(1);
             }
 
-            // Replace the placeholder string, including the quotes around it,
-            // with the actual JSON config from the secret.
-            const newContent = content.replace(/'__FIREBASE_CONFIG_PLACEHOLDER__'/g, config);
+            // Replace the placeholder variable name directly with the JSON object string.
+            const newContent = content.replace(/__FIREBASE_CONFIG_PLACEHOLDER__/g, config);
             
             fs.writeFileSync(path, newContent);
             console.log('Firebase config injected successfully.');
