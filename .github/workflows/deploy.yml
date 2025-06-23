@@ -33,17 +33,31 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Inject Firebase Config
+        # This step uses a small Node.js script to perform the replacement.
+        # It's more robust than using 'sed' because it avoids shell expansion issues
+        # with special characters in the secret JSON.
+        env:
+          # Pass the secret into an environment variable for the script to use
+          FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG }}
         run: |
-          # The path to your HTML file within the repository
-          HTML_FILE="./docs/album-manager/index.html"
+          node -e "
+            const fs = require('fs');
+            const path = './docs/album-manager/index.html';
+            let content = fs.readFileSync(path, 'utf8');
+            
+            const config = process.env.FIREBASE_CONFIG_JSON;
+            if (!config || config.length < 10) {
+              console.error('FIREBASE_CONFIG secret is not set or is invalid!');
+              process.exit(1);
+            }
 
-          # Use sed to find the placeholder string '__FIREBASE_CONFIG_PLACEHOLDER__'
-          # and replace it with the content of the GitHub secret.
-          # The secret should contain your complete Firebase config JSON object.
-          sed -i 's|"__FIREBASE_CONFIG_PLACEHOLDER__"|${{ secrets.FIREBASE_CONFIG }}|g' $HTML_FILE
-        # IMPORTANT: You must create a repository secret named FIREBASE_CONFIG
-        # The value should be your entire Firebase config object, e.g.,
-        # { "apiKey": "AIza...", "authDomain": "...", ... }
+            // Replace the placeholder string, including the quotes around it,
+            // with the actual JSON config from the secret.
+            const newContent = content.replace(/'__FIREBASE_CONFIG_PLACEHOLDER__'/g, config);
+            
+            fs.writeFileSync(path, newContent);
+            console.log('Firebase config injected successfully.');
+          "
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
