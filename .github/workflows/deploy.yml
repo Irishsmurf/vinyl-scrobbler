@@ -1,0 +1,59 @@
+# GitHub Actions Workflow to deploy the Album Management UI to GitHub Pages
+# This workflow securely injects the Firebase config into the HTML file before deployment.
+
+name: Deploy Album Management UI to GitHub Pages
+
+on:
+  # Runs on pushes to the main branch
+  push:
+    branches:
+      - main
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets permissions for the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Inject Firebase Config
+        run: |
+          # The path to your HTML file within the repository
+          HTML_FILE="./docs/album-manager/index.html"
+
+          # Use sed to find the placeholder string '__FIREBASE_CONFIG_PLACEHOLDER__'
+          # and replace it with the content of the GitHub secret.
+          # The secret should contain your complete Firebase config JSON object.
+          sed -i 's|"__FIREBASE_CONFIG_PLACEHOLDER__"|${{ secrets.FIREBASE_CONFIG }}|g' $HTML_FILE
+        # IMPORTANT: You must create a repository secret named FIREBASE_CONFIG
+        # The value should be your entire Firebase config object, e.g.,
+        # { "apiKey": "AIza...", "authDomain": "...", ... }
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload the entire /docs directory
+          path: './docs'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
