@@ -16,12 +16,12 @@
             font-family: 'Inter', sans-serif;
             background-color: #111827; /* bg-gray-900 */
         }
-        .form-input {
+        .form-input, .config-textarea {
             background-color: #374151; /* bg-gray-700 */
             color: #F9FAFB; /* text-gray-50 */
             border-color: #4B5563; /* border-gray-600 */
         }
-        .form-input::placeholder {
+        .form-input::placeholder, .config-textarea::placeholder {
             color: #9CA3AF; /* text-gray-400 */
         }
         .btn-primary {
@@ -53,17 +53,29 @@
 </head>
 <body class="text-white">
 
-    <!-- Login View -->
-    <div id="login-view" class="min-h-screen flex flex-col items-center justify-center text-center p-4">
+    <!-- Configuration View (shown if no config is in local storage) -->
+    <div id="config-view" class="min-h-screen flex flex-col items-center justify-center p-4 hidden">
+        <div class="w-full max-w-lg text-center">
+            <h1 class="text-4xl font-bold text-gray-100">Setup Firebase</h1>
+            <p class="text-gray-400 mt-2 mb-6">Please paste your Firebase configuration JSON below. This will be saved only in your browser's local storage.</p>
+            <textarea id="firebase-config-input" class="config-textarea w-full h-48 p-3 rounded-md border focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm" placeholder='{ "apiKey": "...", "authDomain": "...", ... }'></textarea>
+            <p id="config-error" class="text-red-400 text-sm mt-2 h-5"></p>
+            <button id="save-config-btn" class="w-full mt-2 btn-primary text-white font-semibold py-3 px-6 rounded-lg transition">Save Configuration</button>
+        </div>
+    </div>
+    
+    <!-- Login View (shown after config is saved) -->
+    <div id="login-view" class="min-h-screen flex flex-col items-center justify-center text-center p-4 hidden">
         <h1 class="text-4xl font-bold text-gray-100">Vinyl Scrobbler</h1>
-        <p class="text-gray-400 mt-2 mb-8">Sign in to manage your album collection.</p>
+        <p class="text-gray-400 mt-2 mb-8">Configuration loaded. Please sign in to continue.</p>
         <button id="login-btn" class="bg-white text-gray-800 font-semibold py-3 px-6 rounded-lg flex items-center space-x-3 hover:bg-gray-200 transition">
             <svg class="w-6 h-6" viewBox="0 0 48 48"><path fill="#4285F4" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#34A853" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#FBBC05" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#EA4335" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.099 34.202 44 29.567 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>
             <span>Sign in with Google</span>
         </button>
+        <button id="clear-config-btn-login" class="mt-4 text-sm text-gray-500 hover:text-gray-300">Clear Saved Configuration</button>
     </div>
 
-    <!-- Main Application View (hidden by default) -->
+    <!-- Main Application View -->
     <div id="app-view" class="container mx-auto p-4 md:p-8 max-w-4xl hidden">
         <header class="mb-8 flex flex-col md:flex-row justify-between items-center">
             <div>
@@ -71,14 +83,13 @@
                 <p class="text-center md:text-left text-gray-400 mt-2">Manage your RFID-to-Album mappings.</p>
             </div>
             <div class="flex items-center mt-4 md:mt-0">
-                <div id="user-profile" class="text-right mr-4">
-                    <!-- User info injected here -->
-                </div>
+                <div id="user-profile" class="text-right mr-4"></div>
                 <button id="logout-btn" class="px-4 py-2 rounded-md btn-secondary text-white font-semibold">Sign Out</button>
+                <button id="clear-config-btn-app" class="ml-2 text-xs text-gray-500 hover:text-gray-300" title="Clear Firebase Config">Clear Config</button>
             </div>
         </header>
-
-        <!-- Form for Adding/Editing Albums -->
+        
+        <!-- Form and Album List follow... -->
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
             <h2 id="form-title" class="text-2xl font-semibold mb-4 text-gray-200">Add New Album</h2>
             <form id="album-form" class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -106,7 +117,6 @@
             </form>
         </div>
 
-        <!-- Album List -->
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
             <h2 class="text-2xl font-semibold mb-4 text-gray-200">My Vinyl Collection</h2>
             <div class="overflow-x-auto">
@@ -142,25 +152,25 @@
         import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- Firebase Configuration ---
-        // This placeholder is now a string so it can be safely checked.
-        // The GitHub Action will replace this entire line with: const firebaseConfig = { ... };
-        const firebaseConfig = "__FIREBASE_CONFIG_PLACEHOLDER__";
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'vinyl-scrobbler-dev';
-
-        // --- Firebase Initialization ---
+        // --- Firebase Globals ---
         let app, auth, db, userId;
         let albumsCollectionRef;
         let unsubscribeFromAlbums = null;
         const provider = new GoogleAuthProvider();
 
         // --- UI Element References ---
+        const configView = document.getElementById('config-view');
+        const configInput = document.getElementById('firebase-config-input');
+        const configError = document.getElementById('config-error');
+        const saveConfigBtn = document.getElementById('save-config-btn');
         const loginView = document.getElementById('login-view');
         const appView = document.getElementById('app-view');
         const loginBtn = document.getElementById('login-btn');
         const logoutBtn = document.getElementById('logout-btn');
         const userProfileDiv = document.getElementById('user-profile');
-        
+        const clearConfigBtnLogin = document.getElementById('clear-config-btn-login');
+        const clearConfigBtnApp = document.getElementById('clear-config-btn-app');
+
         const albumForm = document.getElementById('album-form');
         const rfidInput = document.getElementById('rfid-tag');
         const artistInput = document.getElementById('artist-name');
@@ -175,52 +185,74 @@
         const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
         const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
         let docToDeleteId = null;
+        
+        /**
+         * Main function to start the application. Checks for saved config and decides which view to show.
+         */
+        function main() {
+            const savedConfig = localStorage.getItem('firebaseConfig');
+            if (savedConfig) {
+                try {
+                    const config = JSON.parse(savedConfig);
+                    initializeAppAndAuth(config);
+                } catch (e) {
+                    console.error("Invalid config in localStorage, removing it.", e);
+                    localStorage.removeItem('firebaseConfig');
+                    showConfigView();
+                }
+            } else {
+                showConfigView();
+            }
+        }
 
         /**
-         * Initializes Firebase and sets up the authentication state listener.
+         * Initializes Firebase with a given config object and sets up auth listeners.
+         * @param {object} firebaseConfig The Firebase config object.
          */
-        function initializeAppAndAuth() {
+        function initializeAppAndAuth(firebaseConfig) {
             try {
-                // This check now safely compares the variable to the placeholder string.
-                // It will be true when run locally, and false after the Action replaces the placeholder.
-                if (firebaseConfig === "__FIREBASE_CONFIG_PLACEHOLDER__") {
-                    console.error("Firebase config is not set up. This is expected for local development without a replacement script.");
-                     loginView.innerHTML = `
-                        <h1 class="text-4xl font-bold text-red-500">Configuration Error</h1>
-                        <p class="text-gray-400 mt-2 mb-8">The Firebase configuration is missing. The application cannot start.</p>
-                        <p class="text-sm text-gray-500">Please run with a replacement script or deploy via the GitHub Action.</p>
-                    `;
-                    return;
-                }
-
                 setLogLevel('debug');
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                // Main logic that handles user state
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        // User is signed in
-                        console.log("User authenticated:", user.displayName);
                         userId = user.uid;
                         showAppView(user);
                         setupFirestoreListeners();
                     } else {
-                        // User is signed out
-                        console.log("No user signed in.");
                         showLoginView();
                     }
                 });
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
+                showConfigView("Error initializing Firebase. Please check your config.");
+                localStorage.removeItem('firebaseConfig');
             }
         }
+        
+        // --- View Management ---
+        function showConfigView(errorMessage = '') {
+            configView.classList.remove('hidden');
+            loginView.classList.add('hidden');
+            appView.classList.add('hidden');
+            configError.textContent = errorMessage;
+        }
 
-        /**
-         * Shows the main application, hides the login view.
-         */
+        function showLoginView() {
+            configView.classList.add('hidden');
+            loginView.classList.remove('hidden');
+            appView.classList.add('hidden');
+            if (unsubscribeFromAlbums) {
+                unsubscribeFromAlbums();
+                unsubscribeFromAlbums = null;
+            }
+            albumList.innerHTML = '';
+        }
+        
         function showAppView(user) {
+            configView.classList.add('hidden');
             loginView.classList.add('hidden');
             appView.classList.remove('hidden');
             userProfileDiv.innerHTML = `
@@ -230,32 +262,13 @@
         }
 
         /**
-         * Shows the login view, hides the main application.
-         */
-        function showLoginView() {
-            appView.classList.add('hidden');
-            loginView.classList.remove('hidden');
-            
-            if (unsubscribeFromAlbums) {
-                unsubscribeFromAlbums();
-                unsubscribeFromAlbums = null;
-                console.log("Detached Firestore listener.");
-            }
-            albumList.innerHTML = '';
-        }
-
-        /**
          * Sets up the Firestore real-time listener for the logged-in user's albums.
          */
         function setupFirestoreListeners() {
-            if (!userId) {
-                console.error("Cannot setup listeners: userId is not available.");
-                return;
-            }
-            if (unsubscribeFromAlbums) {
-                return;
-            }
+            if (!userId) return;
+            if (unsubscribeFromAlbums) return;
 
+            const appId = 'vinyl-scrobbler-dev';
             const collectionPath = `/artifacts/${appId}/users/${userId}/albums`;
             console.log("Listening to collection:", collectionPath);
             albumsCollectionRef = collection(db, collectionPath);
@@ -269,22 +282,42 @@
         }
         
         // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', main);
+
+        saveConfigBtn.addEventListener('click', () => {
+            const configText = configInput.value;
+            if (!configText) {
+                showConfigView("Configuration cannot be empty.");
+                return;
+            }
+            try {
+                JSON.parse(configText); // Just to validate it's proper JSON
+                localStorage.setItem('firebaseConfig', configText);
+                main(); // Re-initialize the app with the new config
+            } catch (e) {
+                showConfigView("Invalid JSON. Please check your configuration.");
+            }
+        });
+        
+        function clearConfigAndReload() {
+            if(confirm("Are you sure you want to clear your saved Firebase configuration?")) {
+                localStorage.removeItem('firebaseConfig');
+                window.location.reload();
+            }
+        }
+
+        clearConfigBtnLogin.addEventListener('click', clearConfigAndReload);
+        clearConfigBtnApp.addEventListener('click', clearConfigAndReload);
+
         loginBtn.addEventListener('click', () => {
-            signInWithPopup(auth, provider).catch((error) => {
-                console.error("Google Sign-In Error", error);
-            });
+            signInWithPopup(auth, provider).catch((error) => console.error("Google Sign-In Error", error));
         });
 
         logoutBtn.addEventListener('click', () => {
-            signOut(auth).catch((error) => {
-                console.error("Sign Out Error", error);
-            });
+            signOut(auth).catch((error) => console.error("Sign Out Error", error));
         });
 
-        document.addEventListener('DOMContentLoaded', initializeAppAndAuth);
-
-        // --- All other functions (renderAlbums, handleFormSubmit, etc.) remain the same ---
-
+        // --- Rest of the application logic remains the same ---
         function renderAlbums(albums) {
             albumList.innerHTML = ''; 
             if (albums.length === 0) {
@@ -389,8 +422,6 @@
         confirmDeleteBtn.addEventListener('click', confirmDelete);
         cancelDeleteBtn.addEventListener('click', closeDeleteModal);
         deleteModal.addEventListener('click', (e) => { if(e.target === deleteModal) closeDeleteModal(); });
-
     </script>
-
 </body>
 </html>
