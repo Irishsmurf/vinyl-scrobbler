@@ -53,13 +53,28 @@
 </head>
 <body class="text-white">
 
-    <div id="app" class="container mx-auto p-4 md:p-8 max-w-4xl">
+    <!-- Login View -->
+    <div id="login-view" class="min-h-screen flex flex-col items-center justify-center text-center p-4">
+        <h1 class="text-4xl font-bold text-gray-100">Vinyl Scrobbler</h1>
+        <p class="text-gray-400 mt-2 mb-8">Sign in to manage your album collection.</p>
+        <button id="login-btn" class="bg-white text-gray-800 font-semibold py-3 px-6 rounded-lg flex items-center space-x-3 hover:bg-gray-200 transition">
+            <svg class="w-6 h-6" viewBox="0 0 48 48"><path fill="#4285F4" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path><path fill="#34A853" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"></path><path fill="#FBBC05" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"></path><path fill="#EA4335" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.099 34.202 44 29.567 44 24c0-1.341-.138-2.65-.389-3.917z"></path></svg>
+            <span>Sign in with Google</span>
+        </button>
+    </div>
 
-        <header class="mb-8">
-            <h1 class="text-4xl font-bold text-center text-gray-100">Vinyl Scrobbler</h1>
-            <p class="text-center text-gray-400 mt-2">Manage your RFID-to-Album mappings.</p>
-            <div class="mt-4 text-center text-xs text-gray-500">
-                <span>User ID: </span><span id="userIdDisplay">Loading...</span>
+    <!-- Main Application View (hidden by default) -->
+    <div id="app-view" class="container mx-auto p-4 md:p-8 max-w-4xl hidden">
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-center">
+            <div>
+                <h1 class="text-4xl font-bold text-center md:text-left text-gray-100">Vinyl Scrobbler</h1>
+                <p class="text-center md:text-left text-gray-400 mt-2">Manage your RFID-to-Album mappings.</p>
+            </div>
+            <div class="flex items-center mt-4 md:mt-0">
+                <div id="user-profile" class="text-right mr-4">
+                    <!-- User info injected here -->
+                </div>
+                <button id="logout-btn" class="px-4 py-2 rounded-md btn-secondary text-white font-semibold">Sign Out</button>
             </div>
         </header>
 
@@ -67,29 +82,23 @@
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
             <h2 id="form-title" class="text-2xl font-semibold mb-4 text-gray-200">Add New Album</h2>
             <form id="album-form" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <input type="hidden" id="album-id"> <!-- For tracking which album is being edited -->
-                
+                <input type="hidden" id="album-id">
                 <div>
                     <label for="rfid-tag" class="block text-sm font-medium text-gray-300 mb-1">RFID Tag ID</label>
                     <input type="text" id="rfid-tag" class="form-input w-full p-3 rounded-md border focus:ring-indigo-500 focus:border-indigo-500" placeholder="Scan or enter RFID tag ID" required>
                 </div>
-
                 <div>
-                    <!-- This is just a placeholder, in a real scenario you would have a button to trigger the RFID scan on the ESP32 -->
                     <label class="block text-sm font-medium text-gray-300 mb-1 invisible">Scan</label>
                     <button type="button" id="scan-rfid-btn" class="w-full h-[46px] p-3 rounded-md btn-secondary text-white font-semibold">Simulate Scan RFID</button>
                 </div>
-
                 <div>
                     <label for="artist-name" class="block text-sm font-medium text-gray-300 mb-1">Artist Name</label>
                     <input type="text" id="artist-name" class="form-input w-full p-3 rounded-md border focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., Pink Floyd" required>
                 </div>
-
                 <div>
                     <label for="album-title" class="block text-sm font-medium text-gray-300 mb-1">Album Title</label>
                     <input type="text" id="album-title" class="form-input w-full p-3 rounded-md border focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., The Dark Side of the Moon" required>
                 </div>
-
                 <div class="md:col-span-2 flex justify-end space-x-4">
                     <button type="button" id="cancel-edit-btn" class="px-6 py-3 rounded-md btn-secondary text-white font-semibold hidden">Cancel</button>
                     <button type="submit" id="save-btn" class="px-6 py-3 rounded-md btn-primary text-white font-semibold">Save Album</button>
@@ -107,17 +116,10 @@
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">RFID Tag</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Artist</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Album</th>
-                            <th scope="col" class="relative px-6 py-3">
-                                <span class="sr-only">Actions</span>
-                            </th>
+                            <th scope="col" class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
                         </tr>
                     </thead>
-                    <tbody id="album-list" class="bg-gray-800 divide-y divide-gray-700">
-                        <!-- Rows will be injected by JavaScript -->
-                         <tr>
-                            <td colspan="4" class="px-6 py-12 text-center text-gray-400">Loading albums...</td>
-                        </tr>
-                    </tbody>
+                    <tbody id="album-list" class="bg-gray-800 divide-y divide-gray-700"></tbody>
                 </table>
             </div>
         </div>
@@ -135,28 +137,33 @@
         </div>
     </div>
 
-
-    <!-- Firebase App (v11.6.1) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Configuration ---
-        // These global variables are provided by the environment.
+        // The __firebase_config variable is for specific containerized environments.
+        // For GitHub Pages deployment, the placeholder '__FIREBASE_CONFIG_PLACEHOLDER__'
+        // will be replaced by a GitHub Action during the build process.
         const firebaseConfig = typeof __firebase_config !== 'undefined' 
             ? JSON.parse(__firebase_config) 
-            : { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", projectId: "YOUR_PROJECT_ID" }; // Fallback for local dev
-            
+            : JSON.parse('__FIREBASE_CONFIG_PLACEHOLDER__');
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'vinyl-scrobbler-dev';
 
         // --- Firebase Initialization ---
         let app, auth, db, userId;
         let albumsCollectionRef;
-        // This will store the unsubscribe function for the Firestore listener.
         let unsubscribeFromAlbums = null;
+        const provider = new GoogleAuthProvider();
 
         // --- UI Element References ---
+        const loginView = document.getElementById('login-view');
+        const appView = document.getElementById('app-view');
+        const loginBtn = document.getElementById('login-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const userProfileDiv = document.getElementById('user-profile');
+        
         const albumForm = document.getElementById('album-form');
         const rfidInput = document.getElementById('rfid-tag');
         const artistInput = document.getElementById('artist-name');
@@ -167,103 +174,125 @@
         const saveBtn = document.getElementById('save-btn');
         const cancelEditBtn = document.getElementById('cancel-edit-btn');
         const scanRfidBtn = document.getElementById('scan-rfid-btn');
-        const userIdDisplay = document.getElementById('userIdDisplay');
         const deleteModal = document.getElementById('delete-modal');
         const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
         const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
         let docToDeleteId = null;
 
         /**
-         * Initializes the Firebase app, authenticates the user, and sets up Firestore.
+         * Initializes Firebase and sets up the authentication state listener.
          */
-        async function initializeFirebase() {
+        function initializeAppAndAuth() {
             try {
-                // Set log level to debug to see detailed logs in the console.
-                setLogLevel('debug');
+                // Check if the placeholder is still there. If so, it means the app wasn't configured correctly.
+                if (firebaseConfig.apiKey === 'YOUR_API_KEY' || firebaseConfig.projectId === 'YOUR_PROJECT_ID' || JSON.stringify(firebaseConfig) === '"__FIREBASE_CONFIG_PLACEHOLDER__"') {
+                    console.error("Firebase config is not set up. Please configure the deployment action.");
+                    loginView.innerHTML = `
+                        <h1 class="text-4xl font-bold text-red-500">Configuration Error</h1>
+                        <p class="text-gray-400 mt-2 mb-8">The Firebase configuration is missing. The application cannot start.</p>
+                        <p class="text-sm text-gray-500">Please ensure the deployment workflow is set up with the correct secrets.</p>
+                    `;
+                    return;
+                }
 
+                setLogLevel('debug');
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                // Listen for authentication state changes.
-                onAuthStateChanged(auth, async (user) => {
+                // Main logic that handles user state
+                onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        // User is signed in.
-                        console.log("User authenticated with UID:", user.uid);
+                        // User is signed in
+                        console.log("User authenticated:", user.displayName);
                         userId = user.uid;
-                        userIdDisplay.textContent = userId;
+                        showAppView(user);
                         setupFirestoreListeners();
                     } else {
-                        // User is signed out. Attempt to sign in.
-                        console.log("No user signed in. Attempting authentication...");
-                        await authenticateUser();
+                        // User is signed out
+                        console.log("No user signed in.");
+                        showLoginView();
                     }
                 });
-
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                albumList.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-red-400">Error: Could not connect to Firebase. Check console for details.</td></tr>`;
             }
         }
 
         /**
-         * Authenticates the user using a custom token if available, otherwise signs in anonymously.
+         * Shows the main application, hides the login view.
          */
-        async function authenticateUser() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    console.log("Signing in with custom token...");
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    console.log("Signing in anonymously...");
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Authentication Error:", error);
-                userIdDisplay.textContent = "Auth Failed";
-            }
+        function showAppView(user) {
+            loginView.classList.add('hidden');
+            appView.classList.remove('hidden');
+            userProfileDiv.innerHTML = `
+                <div class="font-semibold">${user.displayName}</div>
+                <div class="text-xs text-gray-400">${user.email}</div>
+            `;
         }
-        
+
         /**
-         * Sets up the Firestore collection reference and the real-time listener for album data.
+         * Shows the login view, hides the main application.
+         */
+        function showLoginView() {
+            appView.classList.add('hidden');
+            loginView.classList.remove('hidden');
+            
+            if (unsubscribeFromAlbums) {
+                unsubscribeFromAlbums();
+                unsubscribeFromAlbums = null;
+                console.log("Detached Firestore listener.");
+            }
+            albumList.innerHTML = '';
+        }
+
+        /**
+         * Sets up the Firestore real-time listener for the logged-in user's albums.
          */
         function setupFirestoreListeners() {
             if (!userId) {
                 console.error("Cannot setup listeners: userId is not available.");
                 return;
             }
-            // Detach any existing listener before attaching a new one.
             if (unsubscribeFromAlbums) {
-                unsubscribeFromAlbums();
+                return;
             }
 
-            // Path to the private user-specific collection
             const collectionPath = `/artifacts/${appId}/users/${userId}/albums`;
             console.log("Listening to collection:", collectionPath);
             albumsCollectionRef = collection(db, collectionPath);
             
-            // Listen for real-time updates
             unsubscribeFromAlbums = onSnapshot(albumsCollectionRef, (snapshot) => {
                 const albums = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderAlbums(albums);
             }, (error) => {
                 console.error("Firestore Snapshot Error:", error);
-                albumList.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-red-400">Error fetching data. See console.</td></tr>`;
             });
         }
         
-        /**
-         * Renders the list of albums into the HTML table.
-         * @param {Array} albums - An array of album objects from Firestore.
-         */
+        // --- Event Listeners ---
+        loginBtn.addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch((error) => {
+                console.error("Google Sign-In Error", error);
+            });
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            signOut(auth).catch((error) => {
+                console.error("Sign Out Error", error);
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', initializeAppAndAuth);
+
+        // --- All other functions (renderAlbums, handleFormSubmit, etc.) remain the same ---
+
         function renderAlbums(albums) {
-            albumList.innerHTML = ''; // Clear existing list
-            
+            albumList.innerHTML = ''; 
             if (albums.length === 0) {
                 albumList.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-gray-400">No albums found. Add one using the form above.</td></tr>`;
                 return;
             }
-
             albums.forEach(album => {
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-gray-700/50";
@@ -280,106 +309,67 @@
             });
         }
 
-        /**
-         * Handles the form submission to either add a new album or update an existing one.
-         * @param {Event} e - The form submit event.
-         */
         async function handleFormSubmit(e) {
             e.preventDefault();
             const rfid = rfidInput.value.trim();
             const artist = artistInput.value.trim();
             const album = albumTitleInput.value.trim();
             const docId = albumIdInput.value;
-
-            if (!rfid || !artist || !album) {
-                alert("Please fill out all fields."); // A simple modal/toast would be better.
-                return;
-            }
-            
+            if (!rfid || !artist || !album) { return; }
             saveBtn.disabled = true;
             saveBtn.textContent = 'Saving...';
-
             const albumData = { rfid, artist, album };
-
             try {
                 if (docId) {
-                    // Update existing document
                     const docRef = doc(db, albumsCollectionRef.path, docId);
                     await updateDoc(docRef, albumData);
-                    console.log("Album updated:", docId);
                 } else {
-                    // Add new document
                     await addDoc(albumsCollectionRef, albumData);
-                    console.log("New album added");
                 }
                 resetForm();
             } catch (error) {
                 console.error("Error saving album:", error);
-                alert("Failed to save album. See console for details.");
             } finally {
                 saveBtn.disabled = false;
                 saveBtn.textContent = 'Save Album';
             }
         }
 
-        /**
-         * Prepares the form for editing an existing album.
-         * @param {string} id - The Firestore document ID of the album to edit.
-         */
         function startEdit(id) {
             const row = document.querySelector(`button.edit-btn[data-id="${id}"]`).closest('tr');
             const [rfid, artist, album] = Array.from(row.children).slice(0, 3).map(td => td.textContent);
-
             formTitle.textContent = 'Edit Album';
             albumIdInput.value = id;
             rfidInput.value = rfid;
             artistInput.value = artist;
             albumTitleInput.value = album;
-
             saveBtn.textContent = 'Update Album';
             cancelEditBtn.classList.remove('hidden');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
         
-        /**
-         * Opens the confirmation modal before deleting an album.
-         * @param {string} id - The Firestore document ID of the album to delete.
-         */
         function startDelete(id) {
             docToDeleteId = id;
             deleteModal.classList.remove('hidden');
         }
 
-        /**
-         * Deletes the album document from Firestore.
-         */
         async function confirmDelete() {
             if (!docToDeleteId) return;
-
             try {
                 const docRef = doc(db, albumsCollectionRef.path, docToDeleteId);
                 await deleteDoc(docRef);
-                console.log("Album deleted:", docToDeleteId);
             } catch(error) {
                 console.error("Error deleting album:", error);
-                alert("Failed to delete album.");
             } finally {
                 closeDeleteModal();
             }
         }
 
-        /**
-         * Closes the delete confirmation modal.
-         */
         function closeDeleteModal() {
             docToDeleteId = null;
             deleteModal.classList.add('hidden');
         }
 
-
-        /**
-         * Resets the form to its initial state for adding a new album.
-         */
         function resetForm() {
             albumForm.reset();
             albumIdInput.value = '';
@@ -388,38 +378,19 @@
             cancelEditBtn.classList.add('hidden');
         }
 
-        // --- Event Listeners ---
-        document.addEventListener('DOMContentLoaded', initializeFirebase);
-        
         albumForm.addEventListener('submit', handleFormSubmit);
-
         cancelEditBtn.addEventListener('click', resetForm);
-
         scanRfidBtn.addEventListener('click', () => {
-            // In a real application, you'd get this from your ESP32/serial port.
-            // Here, we simulate it with a random hex string.
             const simulatedRfid = '0x' + [...Array(8)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
             rfidInput.value = simulatedRfid;
         });
-
         albumList.addEventListener('click', (e) => {
-            if (e.target.classList.contains('edit-btn')) {
-                startEdit(e.target.dataset.id);
-            }
-            if (e.target.classList.contains('delete-btn')) {
-                startDelete(e.target.dataset.id);
-            }
+            if (e.target.classList.contains('edit-btn')) startEdit(e.target.dataset.id);
+            if (e.target.classList.contains('delete-btn')) startDelete(e.target.dataset.id);
         });
-
-        // Modal event listeners
         confirmDeleteBtn.addEventListener('click', confirmDelete);
         cancelDeleteBtn.addEventListener('click', closeDeleteModal);
-        deleteModal.addEventListener('click', (e) => {
-             // Close modal if backdrop is clicked
-            if(e.target === deleteModal) {
-                closeDeleteModal();
-            }
-        });
+        deleteModal.addEventListener('click', (e) => { if(e.target === deleteModal) closeDeleteModal(); });
 
     </script>
 
