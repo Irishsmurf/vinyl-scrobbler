@@ -34,29 +34,52 @@
 
 // --- LIBRARIES ---
 #include <WiFi.h>
+#include <WiFiClientSecure.h> // For MQTT over TLS
 #include <PubSubClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include <ArduinoJson.h> // For creating JSON payloads
 
 // --- USER CONFIGURATION ---
+// IMPORTANT: These values MUST be configured before uploading to the ESP32.
+// Consider using a more secure method like a configuration portal (WiFiManager)
+// or build flags for production devices.
+
 // -- Wi-Fi Credentials
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+#define WIFI_SSID "" // Example: "MyWiFiNetwork"
+#define WIFI_PASSWORD "" // Example: "MyWiFiPassword"
 
 // -- MQTT Broker Configuration
-const char* mqtt_server = "YOUR_MQTT_BROKER_IP_OR_HOSTNAME";
-const int mqtt_port = 1883; // 1883 is standard, 8883 for SSL
-const char* mqtt_topic = "vinyl/scrobble"; // The topic to publish RFID tags to
-const char* mqtt_client_id = "ESP32VinylScrobbler";
+#define MQTT_SERVER "" // Example: "your_mqtt_broker.com"
+#define MQTT_PORT 8883 // Default to 8883 for MQTTS (SSL/TLS)
+#define MQTT_USER "" // Example: "mqtt_username", leave empty if no auth
+#define MQTT_PASSWORD "" // Example: "mqtt_password", leave empty if no auth
+#define MQTT_TOPIC "vinyl/scrobble" // The topic to publish RFID tags to
+#define MQTT_CLIENT_ID "ESP32VinylScrobbler"
+
+// -- Device Specific Configuration --
+// This User ID should correspond to a Firebase User ID for associating the scrobbles.
+// This needs to be provisioned onto the device securely.
+#define USER_ID_FOR_ESP32 "" // Example: "firebase_user_id_123"
 
 // -- Hardware Pin Configuration
 #define SS_PIN    5  // MFRC522 SDA/SS pin
 #define RST_PIN   4  // MFRC522 RST pin
 #define WAKEUP_PIN GPIO_NUM_33 // Pin to connect the wakeup button to
 
+// --- MQTT Root CA Certificate (Optional, but recommended for MQTTS) ---
+// If your MQTT broker uses a self-signed certificate or one not in ESP32's default store,
+// you'll need to provide its Root CA certificate here.
+// Example:
+// const char* mqtt_root_ca = \
+// "-----BEGIN CERTIFICATE-----\n" \
+// "MIID... (your CA certificate) ...END CERTIFICATE-----\n";
+// If using a well-known CA, you might not need this, or set it to NULL.
+const char* mqtt_root_ca = NULL;
+
 // --- GLOBAL VARIABLES ---
-WiFiClient espClient;
-PubSubClient client(espClient);
+WiFiClientSecure espSecureClient; // Use WiFiClientSecure for MQTTS
+PubSubClient client(espSecureClient);
 MFRC522 rfid(SS_PIN, RST_PIN);
 
 // --- FUNCTION PROTOTYPES ---
@@ -64,6 +87,7 @@ void setup_wifi();
 void reconnect_mqtt();
 void scan_and_publish();
 String get_rfid_uid(byte *buffer, byte bufferSize);
+bool check_configuration();
 
 void setup() {
   // Start serial communication for debugging purposes
@@ -72,15 +96,31 @@ void setup() {
 
   Serial.println("\nVinyl Scrobbler waking up...");
 
+  // Check if configuration is set
+  if (!check_configuration()) {
+    Serial.println("CRITICAL: Configuration is not set. Please define WIFI_SSID, WIFI_PASSWORD, MQTT_SERVER, and USER_ID_FOR_ESP32.");
+    Serial.println("Going to sleep to prevent further issues.");
+    esp_deep_sleep_start(); // Sleep indefinitely
+  }
+
   // Configure the wakeup pin with an internal pull-up resistor
-  // The button should connect this pin to GND
   pinMode(WAKEUP_PIN, INPUT_PULLUP);
+
+  // Configure WiFiClientSecure (for MQTTS)
+  if (mqtt_root_ca != NULL) {
+    espSecureClient.setCACert(mqtt_root_ca);
+  } else {
+    // If no specific CA is provided, you might rely on the system store.
+    // For some public brokers, you might need to use setInsecure() if you skip CA validation (NOT RECOMMENDED for production).
+    // espSecureClient.setInsecure(); // Use with caution!
+    Serial.println("Warning: No MQTT Root CA provided. Connection might be insecure or fail if broker's CA is not recognized.");
+  }
 
   // Connect to Wi-Fi
   setup_wifi();
 
   // Configure MQTT client
-  client.setServer(mqtt_server, mqtt_port);
+  client.setServer(MQTT_SERVER, MQTT_PORT);
 
   // Initialize RFID reader
   SPI.begin();       // Init SPI bus
@@ -113,9 +153,9 @@ void loop() {
 void setup_wifi() {
   delay(10);
   Serial.print("Connecting to ");
-  Serial.println(ssid);
+  Serial.println(WIFI_SSID);
 
-  WiFi.begin(ssid, password);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   int retries = 0;
   while (WiFi.status() != WL_CONNECTED) {
@@ -138,13 +178,33 @@ void setup_wifi() {
 void reconnect_mqtt() {
   int retries = 0;
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    if (client.connect(mqtt_client_id)) {
-      Serial.println("connected");
+    Serial.print("Attempting MQTT connection to ");
+    Serial.print(MQTT_SERVER);
+    Serial.print(":");
+    Serial.println(MQTT_PORT);
+
+    bool connected = false;
+    if (strlen(MQTT_USER) > 0) {
+      Serial.print("Authenticating with user: ");
+      Serial.println(MQTT_USER);
+      connected = client.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD);
     } else {
-      Serial.print("failed, rc=");
+      Serial.println("Connecting without MQTT username/password.");
+      connected = client.connect(MQTT_CLIENT_ID);
+    }
+
+    if (connected) {
+      Serial.println("MQTT connected!");
+    } else {
+      Serial.print("MQTT connection failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 2 seconds");
+      // Print more details for SSL/TLS connection errors
+      char lastError[100];
+      espSecureClient.lastError(lastError, 100);
+      Serial.print("WiFiClientSecure last error: ");
+      Serial.println(lastError);
+
       retries++;
       delay(2000);
     }
@@ -156,7 +216,7 @@ void reconnect_mqtt() {
 }
 
 /**
- * @brief Main logic function. Scans for an RFID tag and publishes its UID.
+ * @brief Main logic function. Scans for an RFID tag and publishes its UID and UserID as JSON.
  */
 void scan_and_publish() {
   // Ensure we have an MQTT connection
@@ -174,16 +234,28 @@ void scan_and_publish() {
   while(millis() - startTime < 5000) { // Scan for 5 seconds
     // Look for new cards
     if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
-      
-      String uid = get_rfid_uid(rfid.uid.uidByte, rfid.uid.size);
+      String rfidUid = get_rfid_uid(rfid.uid.uidByte, rfid.uid.size);
       Serial.print("Card detected! UID: ");
-      Serial.println(uid);
+      Serial.println(rfidUid);
 
-      // Publish the UID to the MQTT topic
-      if (client.publish(mqtt_topic, uid.c_str())) {
-        Serial.println("UID successfully published to MQTT.");
+      // Create JSON payload
+      StaticJsonDocument<128> jsonDoc; // Adjust size as needed
+      jsonDoc["rfid"] = rfidUid;
+      jsonDoc["userId"] = USER_ID_FOR_ESP32;
+
+      char jsonBuffer[128];
+      size_t n = serializeJson(jsonDoc, jsonBuffer);
+
+      // Publish the JSON payload to the MQTT topic
+      Serial.print("Publishing to MQTT topic ");
+      Serial.print(MQTT_TOPIC);
+      Serial.print(": ");
+      Serial.println(jsonBuffer);
+
+      if (client.publish(MQTT_TOPIC, jsonBuffer, n)) {
+        Serial.println("Message successfully published to MQTT.");
       } else {
-        Serial.println("Failed to publish UID.");
+        Serial.println("Failed to publish message to MQTT.");
       }
       
       cardFound = true;
@@ -197,6 +269,34 @@ void scan_and_publish() {
   if (!cardFound) {
     Serial.println("No RFID card found in time.");
   }
+}
+
+
+/**
+ * @brief Checks if essential configuration parameters are set.
+ * @return True if configuration seems minimally valid, false otherwise.
+ */
+bool check_configuration() {
+  bool configured = true;
+  if (strlen(WIFI_SSID) == 0) {
+    Serial.println("Error: WIFI_SSID is not defined.");
+    configured = false;
+  }
+  if (strlen(WIFI_PASSWORD) == 0) {
+    Serial.println("Error: WIFI_PASSWORD is not defined.");
+    configured = false;
+  }
+  if (strlen(MQTT_SERVER) == 0) {
+    Serial.println("Error: MQTT_SERVER is not defined.");
+    configured = false;
+  }
+   if (strlen(USER_ID_FOR_ESP32) == 0) {
+    Serial.println("Error: USER_ID_FOR_ESP32 is not defined.");
+    configured = false;
+  }
+  // MQTT_USER and MQTT_PASSWORD can be empty for anonymous connection.
+  // MQTT_TOPIC has a default.
+  return configured;
 }
 
 /**

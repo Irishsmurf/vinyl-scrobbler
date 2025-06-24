@@ -32,29 +32,57 @@ const LASTFM_API_SECRET = process.env.LASTFM_API_SECRET; // Your Last.fm Shared 
 const LASTFM_SESSION_KEY = process.env.LASTFM_SESSION_KEY; // Your user session key
 const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 
+// --- Application Specific Configuration ---
+const APP_ID = process.env.APP_ID || 'vinyl-scrobbler-dev'; // Used in Firestore path
+
 /**
  * Main function triggered by a Pub/Sub message.
- * * @param {object} message The Pub/Sub message.
+ * Expects a JSON payload with "rfid" and "userId".
+ * @param {object} message The Pub/Sub message.
  * @param {object} context The event metadata.
  */
 exports.scrobbleAlbum = async (message, context) => {
-    // 1. Decode the RFID UID from the Pub/Sub message
-    const rfidUid = message.data
-        ? Buffer.from(message.data, 'base64').toString().trim()
-        : null;
+    let rfidUid, userId;
 
-    if (!rfidUid) {
-        console.log('No RFID UID received in message.');
-        return;
+    // 1. Decode and parse the message data
+    try {
+        const messageDataString = message.data
+            ? Buffer.from(message.data, 'base64').toString()
+            : null;
+
+        if (!messageDataString) {
+            console.log('No data in Pub/Sub message.');
+            return;
+        }
+
+        const messagePayload = JSON.parse(messageDataString);
+        rfidUid = messagePayload.rfid;
+        userId = messagePayload.userId;
+
+        if (!rfidUid || typeof rfidUid !== 'string' || rfidUid.trim() === '') {
+            console.log('Missing or invalid RFID UID in message payload.');
+            return;
+        }
+        if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+            console.log('Missing or invalid userId in message payload.');
+            return;
+        }
+        rfidUid = rfidUid.trim();
+        userId = userId.trim();
+
+        console.log(`Received RFID UID: ${rfidUid} for User ID: ${userId}`);
+
+    } catch (error) {
+        console.error('Failed to parse Pub/Sub message:', error);
+        return; // Stop processing if message is malformed
     }
-    console.log(`Received RFID UID: ${rfidUid}`);
 
     try {
-        // 2. Find the album in Firestore
-        const albumDetails = await findAlbumByRfid(rfidUid);
+        // 2. Find the album in Firestore for the specific user
+        const albumDetails = await findAlbumByRfidForUser(rfidUid, userId);
 
         if (!albumDetails) {
-            console.log(`No album found in Firestore for RFID: ${rfidUid}`);
+            console.log(`No album found in Firestore for RFID: ${rfidUid} and User ID: ${userId}`);
             return;
         }
         console.log(`Found album: ${albumDetails.artist} - ${albumDetails.album}`);
@@ -69,25 +97,30 @@ exports.scrobbleAlbum = async (message, context) => {
         console.log(`Found ${tracks.length} tracks. Preparing to scrobble.`);
 
         // 4. Scrobble each track to Last.fm
+        // Note: The Last.fm session key (LASTFM_SESSION_KEY) determines which Last.fm user the tracks are scrobbled to.
+        // This function currently uses a single, globally configured session key.
+        // If scrobbles need to be per-Firebase-user, the session key management would need to be more complex (e.g., stored per user).
         await scrobbleTracks(tracks, albumDetails.artist, albumDetails.album);
 
         console.log('Successfully scrobbled all tracks.');
 
     } catch (error) {
-        console.error('An error occurred during the scrobbling process:', error);
+        console.error(`An error occurred during the scrobbling process for RFID ${rfidUid}, User ${userId}:`, error);
     }
 };
 
 /**
- * Searches across all user-specific 'albums' collections for a matching RFID tag.
- * This is inefficient but necessary without knowing the user ID beforehand.
+ * Searches for a matching RFID tag in a specific user's 'albums' collection.
  * @param {string} rfidUid The RFID UID to search for.
+ * @param {string} userId The Firebase User ID.
  * @returns {Promise<object|null>} The album data or null if not found.
  */
-async function findAlbumByRfid(rfidUid) {
-    console.log('Searching for RFID in Firestore...');
-    const artifactsCollection = firestore.collectionGroup('albums');
-    const snapshot = await artifactsCollection.where('rfid', '==', rfidUid).limit(1).get();
+async function findAlbumByRfidForUser(rfidUid, userId) {
+    const collectionPath = `artifacts/${APP_ID}/users/${userId}/albums`;
+    console.log(`Searching for RFID ${rfidUid} in Firestore collection: ${collectionPath}`);
+
+    const userAlbumsCollection = firestore.collection(collectionPath);
+    const snapshot = await userAlbumsCollection.where('rfid', '==', rfidUid).limit(1).get();
 
     if (snapshot.empty) {
         return null;
