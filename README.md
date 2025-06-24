@@ -27,7 +27,35 @@ This project bridges the gap between a physical record collection and digital li
 
 The system is composed of several decoupled components that communicate via cloud services:
 
-![Architecture Diagram](httpsa://i.imgur.com/your-diagram-link.png) <!-- It's highly recommended to create and link a diagram -->
+```ascii
++---------------------+      +-----------------+      +----------------------+
+| ESP32 RFID Scanner  |----->| MQTT Broker     |----->| Google Cloud Pub/Sub |
+| (Hardware Device)   |      | (e.g., Mosquitto)|      | Topic: vinyl/scrobble|
++---------------------+      +-----------------+      +----------------------+
+                                                             |
+                                                             | (UID)
+                                                             v
++---------------------+      +--------------------------+   +-------------------------+   +-----------------+
+| Web NFC PWA         |----->| HTTP Gateway Function    |-->| Scrobbler Function      |<->| Last.fm API     |
+| (Mobile Phone App)  |      | (Google Cloud Function)  |   | (Google Cloud Function) |   | (Scrobble Tracks) |
++---------------------+      +--------------------------+   +-------------------------+   +-----------------+
+  (Scan NFC Tag,                                                ^           |
+   Sends UID via HTTPS)                                         |           | (Lookup RFID UID,
+                                                                |           |  Get Album Details)
+                                                                |           v
+                                                      +---------------------+
+                                                      | Firebase Firestore  |
+                                                      | (Stores RFID UID -> |
+                                                      |  Album Mappings)    |
+                                                      +---------------------+
+                                                                ^
+                                                                | (CRUD Operations)
+                                                                |
+                                                      +----------------------+
+                                                      | Album Management UI  |
+                                                      | (Web Interface)      |
+                                                      +----------------------+
+```
 
 1.  **Frontend (Input Methods):**
     * **ESP32 Device:** Wakes on button press, scans an RFID tag, and publishes the tag's UID to an MQTT topic.
