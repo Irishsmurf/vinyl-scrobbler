@@ -40,8 +40,7 @@ const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 exports.scrobbleAlbum = async (message, context) => {
     // 1. Decode the RFID UID from the Pub/Sub message
     const rfidUid = message.data
-        ? Buffer.from(message.data, 'base64').toString().trim()
-        : null;
+    console.log(`Received message: ${message.data}`);
 
     if (!rfidUid) {
         console.log('No RFID UID received in message.');
