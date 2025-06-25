@@ -12,13 +12,13 @@
  * 1. Place this `index.js` and the `package.json` in a new directory.
  * 2. Run `npm install` in that directory.
  * 3. You MUST obtain a Last.fm API Key, Shared Secret, and a user Session Key.
- * - Get API Key/Secret here: https://www.last.fm/api/account/create
- * - Get a Session Key by completing the auth flow: https://www.last.fm/api/desktopauth
+ * - The provided "lastfm-sk-generator" script can generate the Session Key.
  * 4. Add your secrets to the Cloud Function's environment variables during deployment for security.
  * 5. Deploy the function using the gcloud CLI or the Google Cloud Console UI.
  */
 
 const { Firestore } = require('@google-cloud/firestore');
+const functions = require('@google-cloud/functions-framework');
 const axios = require('axios');
 const md5 = require('md5');
 
@@ -34,23 +34,28 @@ const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 
 /**
  * Main function triggered by a Pub/Sub message.
- * * @param {object} message The Pub/Sub message.
+ * This function is now resilient to both legacy and Eventarc Pub/Sub trigger formats.
+ * @param {object} message The Pub/Sub message object OR an Eventarc event envelope.
  * @param {object} context The event metadata.
  */
-exports.scrobbleAlbum = async (message, context) => {
-    // 1. Decode the RFID UID from the Pub/Sub message
-    const rfidUid = message.data
-    console.log(`Received message: ${message.data}`);
+functions.cloudEvent('helloPubSub', cloudEvent => {
+    // The Pub/Sub message is passed as the CloudEvent's data payload.
+    const base64Uid = cloudEvent.data.message.data;
+    console.log(`Received CloudEvent: ${base64Uid}`);
+
+    const rfidUid = base64Uid
+        ? Buffer.from(base64Uid, 'base64').toString()
+        : null;
 
     if (!rfidUid) {
-        console.log('No RFID UID received in message.');
+        console.log('Decoded RFID UID is empty. Aborting.');
         return;
     }
-    console.log(`Received RFID UID: ${rfidUid}`);
+    console.log(`Received and decoded RFID UID: ${rfidUid}`);
 
     try {
         // 2. Find the album in Firestore
-        const albumDetails = await findAlbumByRfid(rfidUid);
+        const albumDetails = findAlbumByRfid(rfidUid);
 
         if (!albumDetails) {
             console.log(`No album found in Firestore for RFID: ${rfidUid}`);
@@ -59,7 +64,7 @@ exports.scrobbleAlbum = async (message, context) => {
         console.log(`Found album: ${albumDetails.artist} - ${albumDetails.album}`);
 
         // 3. Get the album's tracklist from Last.fm
-        const tracks = await getAlbumTracks(albumDetails.artist, albumDetails.album);
+        const tracks = getAlbumTracks(albumDetails.artist, albumDetails.album);
 
         if (!tracks || tracks.length === 0) {
             console.log(`Could not find a tracklist for ${albumDetails.artist} - ${albumDetails.album}`);
@@ -68,14 +73,16 @@ exports.scrobbleAlbum = async (message, context) => {
         console.log(`Found ${tracks.length} tracks. Preparing to scrobble.`);
 
         // 4. Scrobble each track to Last.fm
-        await scrobbleTracks(tracks, albumDetails.artist, albumDetails.album);
+        scrobbleTracks(tracks, albumDetails.artist, albumDetails.album);
 
         console.log('Successfully scrobbled all tracks.');
 
     } catch (error) {
         console.error('An error occurred during the scrobbling process:', error);
+        // Re-throw the error to ensure the message is nacked and retried.
+        throw error;
     }
-};
+});
 
 /**
  * Searches across all user-specific 'albums' collections for a matching RFID tag.
@@ -84,9 +91,10 @@ exports.scrobbleAlbum = async (message, context) => {
  * @returns {Promise<object|null>} The album data or null if not found.
  */
 async function findAlbumByRfid(rfidUid) {
-    console.log('Searching for RFID in Firestore...');
-    const artifactsCollection = firestore.collectionGroup('albums');
-    const snapshot = await artifactsCollection.where('rfid', '==', rfidUid).limit(1).get();
+    console.log(`Searching for RFID '${rfidUid}' in Firestore...`);
+    // Use a collectionGroup query to search across all subcollections named 'albums'.
+    const albumsCollectionGroup = firestore.collectionGroup('albums');
+    const snapshot = await albumsCollectionGroup.where('rfid', '==', rfidUid).limit(1).get();
 
     if (snapshot.empty) {
         return null;
@@ -115,10 +123,14 @@ async function getAlbumTracks(artist, album) {
         });
 
         if (response.data.error || !response.data.album || !response.data.album.tracks) {
-            console.error('Last.fm API error while getting tracklist:', response.data.message);
+            console.error('Last.fm API error while getting tracklist:', response.data.message || 'No track data found.');
             return [];
         }
 
+        // Ensure tracks.track is always an array, even for single-track albums
+        if (!Array.isArray(response.data.album.tracks.track)) {
+            return [response.data.album.tracks.track];
+        }
         return response.data.album.tracks.track;
     } catch (error) {
         console.error('Error calling Last.fm album.getinfo:', error.message);
@@ -147,7 +159,7 @@ async function scrobbleTracks(tracks, artist, album) {
         api_key: LASTFM_API_KEY
     };
 
-    // Last.fm API requires parameters for each track indexed with []
+    // Last.fm API requires parameters for each track to be indexed with []
     tracks.forEach((track, i) => {
         params[`artist[${i}]`] = artist;
         params[`album[${i}]`] = album;
@@ -160,6 +172,7 @@ async function scrobbleTracks(tracks, artist, album) {
     params.format = 'json';
 
     try {
+        // Use URLSearchParams to correctly format the body for application/x-www-form-urlencoded
         const response = await axios.post(LASTFM_API_URL, new URLSearchParams(params).toString(), {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
