@@ -179,9 +179,9 @@ String get_rfid_uid(byte *buffer, byte bufferSize) {
     uid += (buffer[i] < 0x10 ? "0" : "");
     uid += String(buffer[i], HEX);
     if (i < bufferSize - 1) {
-      uid += " ";
+      uid += ":";
     }
   }
-  uid.toUpperCase();
+  uid.toLowerCase();
   return uid;
 }
