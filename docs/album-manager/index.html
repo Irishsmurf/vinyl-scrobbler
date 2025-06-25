@@ -4,13 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vinyl Scrobbler - Album Management</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Custom Styles -->
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -24,6 +21,10 @@
         .form-input::placeholder, .config-textarea::placeholder {
             color: #9CA3AF; /* text-gray-400 */
         }
+        .form-input:disabled {
+            background-color: #4B5563; /* bg-gray-600 */
+            cursor: not-allowed;
+        }
         .btn-primary {
             background-color: #4F46E5; /* bg-indigo-600 */
             transition: background-color 0.3s ease;
@@ -35,8 +36,12 @@
              background-color: #4B5563; /* bg-gray-600 */
              transition: background-color 0.3s ease;
         }
-        .btn-secondary:hover {
+        .btn-secondary:hover:not(:disabled) {
              background-color: #6B7280; /* bg-gray-500 */
+        }
+        .btn-secondary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         .btn-danger {
             background-color: #DC2626; /* bg-red-600 */
@@ -53,7 +58,6 @@
 </head>
 <body class="text-white">
 
-    <!-- Configuration View (shown if no config is in local storage) -->
     <div id="config-view" class="min-h-screen flex flex-col items-center justify-center p-4 hidden">
         <div class="w-full max-w-lg text-center">
             <h1 class="text-4xl font-bold text-gray-100">Setup Firebase</h1>
@@ -64,7 +68,6 @@
         </div>
     </div>
     
-    <!-- Login View (shown after config is saved) -->
     <div id="login-view" class="min-h-screen flex flex-col items-center justify-center text-center p-4 hidden">
         <h1 class="text-4xl font-bold text-gray-100">Vinyl Scrobbler</h1>
         <p class="text-gray-400 mt-2 mb-8">Configuration loaded. Please sign in to continue.</p>
@@ -75,7 +78,6 @@
         <button id="clear-config-btn-login" class="mt-4 text-sm text-gray-500 hover:text-gray-300">Clear Saved Configuration</button>
     </div>
 
-    <!-- Main Application View -->
     <div id="app-view" class="container mx-auto p-4 md:p-8 max-w-4xl hidden">
         <header class="mb-8 flex flex-col md:flex-row justify-between items-center">
             <div>
@@ -89,7 +91,6 @@
             </div>
         </header>
         
-        <!-- Form and Album List follow... -->
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
             <h2 id="form-title" class="text-2xl font-semibold mb-4 text-gray-200">Add New Album</h2>
             <form id="album-form" class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -100,7 +101,7 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-300 mb-1 invisible">Scan</label>
-                    <button type="button" id="scan-rfid-btn" class="w-full h-[46px] p-3 rounded-md btn-secondary text-white font-semibold">Simulate Scan RFID</button>
+                    <button type="button" id="scan-rfid-btn" class="w-full h-[46px] p-3 rounded-md btn-secondary text-white font-semibold">Scan RFID</button>
                 </div>
                 <div>
                     <label for="artist-name" class="block text-sm font-medium text-gray-300 mb-1">Artist Name</label>
@@ -135,7 +136,6 @@
         </div>
     </div>
     
-    <!-- Deletion Confirmation Modal -->
     <div id="delete-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden modal-backdrop">
         <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm mx-4">
             <h3 class="text-lg font-bold text-white mb-4">Confirm Deletion</h3>
@@ -259,6 +259,12 @@
                 <div class="font-semibold">${user.displayName}</div>
                 <div class="text-xs text-gray-400">${user.email}</div>
             `;
+            // Check for Web NFC support and update UI accordingly
+            if (!('NDEFReader' in window)) {
+                scanRfidBtn.textContent = 'Web NFC Not Supported';
+                scanRfidBtn.disabled = true;
+                console.warn("Web NFC API not available.");
+            }
         }
 
         /**
@@ -317,13 +323,13 @@
             signOut(auth).catch((error) => console.error("Sign Out Error", error));
         });
 
-        // --- Rest of the application logic remains the same ---
         function renderAlbums(albums) {
             albumList.innerHTML = ''; 
             if (albums.length === 0) {
                 albumList.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-gray-400">No albums found. Add one using the form above.</td></tr>`;
                 return;
             }
+            albums.sort((a, b) => a.artist.localeCompare(b.artist) || a.album.localeCompare(b.album));
             albums.forEach(album => {
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-gray-700/50";
@@ -411,14 +417,51 @@
 
         albumForm.addEventListener('submit', handleFormSubmit);
         cancelEditBtn.addEventListener('click', resetForm);
-        scanRfidBtn.addEventListener('click', () => {
-            const simulatedRfid = '0x' + [...Array(8)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
-            rfidInput.value = simulatedRfid;
+
+        // --- NEW: Web NFC Scan Implementation ---
+        scanRfidBtn.addEventListener('click', async () => {
+            if (!('NDEFReader' in window)) {
+                console.error("Web NFC is not supported on this browser.");
+                return;
+            }
+            console.log("User clicked scan button");
+            try {
+                scanRfidBtn.disabled = true;
+                scanRfidBtn.textContent = 'Scanning...';
+                const reader = new NDEFReader();
+                await reader.scan();
+                console.log("NFC scan started successfully");
+
+                reader.onreadingerror = (event) => {
+                    console.error(`Error reading NFC tag: ${event.message}`);
+                    scanRfidBtn.disabled = false;
+                    scanRfidBtn.textContent = 'Scan RFID';
+                };
+
+                reader.onreading = (event) => {
+                    console.log("NFC tag read successfully");
+                    const serialNumber = event.serialNumber;
+                    if (serialNumber) {
+                        rfidInput.value = serialNumber;
+                    }
+                    scanRfidBtn.disabled = false;
+                    scanRfidBtn.textContent = 'Scan RFID';
+                     // Note: The Web NFC spec doesn't provide a way to programmatically stop a scan initiated by reader.scan().
+                    // It will stop automatically after a tag is read or after a timeout. Re-enabling the button is sufficient.
+                };
+            } catch (error) {
+                console.error("Error starting NFC scan:", error);
+                alert(`Could not start NFC scan. Please ensure you've given permission and have NFC enabled. Error: ${error.name}`);
+                scanRfidBtn.disabled = false;
+                scanRfidBtn.textContent = 'Scan RFID';
+            }
         });
+
         albumList.addEventListener('click', (e) => {
             if (e.target.classList.contains('edit-btn')) startEdit(e.target.dataset.id);
             if (e.target.classList.contains('delete-btn')) startDelete(e.target.dataset.id);
         });
+        
         confirmDeleteBtn.addEventListener('click', confirmDelete);
         cancelDeleteBtn.addEventListener('click', closeDeleteModal);
         deleteModal.addEventListener('click', (e) => { if(e.target === deleteModal) closeDeleteModal(); });
