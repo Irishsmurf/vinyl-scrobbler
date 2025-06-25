@@ -37,7 +37,6 @@ const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
  * This function is now resilient to both legacy and Eventarc Pub/Sub trigger formats.
  * @param {object} cloudEvent The event metadata and data payload.
  */
-// CORRECTED: Made the function handler `async` to allow for `await`.
 functions.cloudEvent('helloPubSub', async (cloudEvent) => {
     // The Pub/Sub message is passed as the CloudEvent's data payload.
     const base64Uid = cloudEvent.data.message.data;
@@ -55,7 +54,6 @@ functions.cloudEvent('helloPubSub', async (cloudEvent) => {
 
     try {
         // 2. Find the album in Firestore
-        // CORRECTED: Used `await` to ensure the function waits for the Firestore query to complete.
         const albumDetails = await findAlbumByRfid(rfidUid);
 
         if (!albumDetails) {
@@ -65,7 +63,6 @@ functions.cloudEvent('helloPubSub', async (cloudEvent) => {
         console.log(`Found album: ${albumDetails.artist} - ${albumDetails.album}`);
 
         // 3. Get the album's tracklist from Last.fm
-        // CORRECTED: Used `await` to wait for the Last.fm API call.
         const tracks = await getAlbumTracks(albumDetails.artist, albumDetails.album);
 
         if (!tracks || tracks.length === 0) {
@@ -75,10 +72,9 @@ functions.cloudEvent('helloPubSub', async (cloudEvent) => {
         console.log(`Found ${tracks.length} tracks. Preparing to scrobble.`);
 
         // 4. Scrobble each track to Last.fm
-        // CORRECTED: Used `await` to ensure the scrobbling process finishes before the function exits.
         await scrobbleTracks(tracks, albumDetails.artist, albumDetails.album);
 
-        console.log('Successfully scrobbled all tracks.');
+        // console.log('Successfully scrobbled all tracks.'); // This message is now part of scrobbleTracks
 
     } catch (error) {
         console.error('An error occurred during the scrobbling process:', error);
@@ -94,17 +90,35 @@ functions.cloudEvent('helloPubSub', async (cloudEvent) => {
  */
 async function findAlbumByRfid(rfidUid) {
     console.log(`Searching for RFID '${rfidUid}' in Firestore...`);
-    // Use a collectionGroup query to search across all subcollections named 'albums'.
     const albumsCollectionGroup = firestore.collectionGroup('albums');
-    const snapshot = await albumsCollectionGroup.where('rfid', '==', rfidUid).limit(1).get();
+    
+    try {
+        // Use a collectionGroup query to search across all subcollections named 'albums'.
+        const snapshot = await albumsCollectionGroup.where('rfid', '==', rfidUid).limit(1).get();
 
-    if (snapshot.empty) {
-        return null;
+        if (snapshot.empty) {
+            return null;
+        }
+
+        const doc = snapshot.docs[0];
+        return { id: doc.id, ...doc.data() };
+    } catch (error) {
+        // IMPROVED LOGGING: Specifically check for the FAILED_PRECONDITION error code (9).
+        if (error.code === 9) {
+            console.error(
+                'Firestore FAILED_PRECONDITION error: This query requires a composite index that has not been created.',
+                'The error message below may contain a link to create it in the Google Cloud Console.'
+            );
+            console.error('Original error details:', error.details || error.message);
+            // Construct a more helpful message to guide the user.
+            const helpfulMessage = `A Firestore index is required for this query to work. Please go to your Firestore console, navigate to the 'Indexes' tab, and create a composite index for the 'albums' collection group on the 'rfid' field. The original error was: "${error.details}"`;
+            throw new Error(helpfulMessage, { cause: error });
+        }
+        // For any other errors, just re-throw them.
+        throw error;
     }
-
-    const doc = snapshot.docs[0];
-    return { id: doc.id, ...doc.data() };
 }
+
 
 /**
  * Fetches the full tracklist for an album from the Last.fm API.
@@ -187,13 +201,27 @@ async function scrobbleTracks(tracks, artist, album) {
             console.error('Last.fm scrobble API error:', response.data.message);
             throw new Error(`Last.fm scrobble API error (${response.data.error}): ${response.data.message}`);
         }
+        
+        // --- IMPROVED LOGGING ---
+        // The Last.fm API returns an object which can contain an array or a single object.
+        const scrobbles = response.data.scrobbles.scrobble;
+        const scrobblesArray = Array.isArray(scrobbles) ? scrobbles : [scrobbles];
+        
+        console.log(`Scrobble successful. Logged ${scrobblesArray.length} tracks:`);
+        scrobblesArray.forEach(scrobble => {
+            // The actual text is in the '#text' property of the response objects.
+            const trackName = scrobble.track['#text'];
+            const artistName = scrobble.artist['#text'];
+            const albumName = scrobble.album['#text'];
+            console.log(`  - "${trackName}" by ${artistName} from the album "${albumName}"`);
+        });
 
-        console.log('Scrobble successful:', response.data.scrobbles);
     } catch (error) {
         console.error('Error calling Last.fm track.scrobble:', error.message);
         throw error;
     }
 }
+
 
 /**
  * Generates the MD5 signature required for authenticated Last.fm API calls.
