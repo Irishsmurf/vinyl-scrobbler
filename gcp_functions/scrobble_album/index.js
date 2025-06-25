@@ -35,16 +35,16 @@ const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 /**
  * Main function triggered by a Pub/Sub message.
  * This function is now resilient to both legacy and Eventarc Pub/Sub trigger formats.
- * @param {object} message The Pub/Sub message object OR an Eventarc event envelope.
- * @param {object} context The event metadata.
+ * @param {object} cloudEvent The event metadata and data payload.
  */
-functions.cloudEvent('helloPubSub', cloudEvent => {
+// CORRECTED: Made the function handler `async` to allow for `await`.
+functions.cloudEvent('helloPubSub', async (cloudEvent) => {
     // The Pub/Sub message is passed as the CloudEvent's data payload.
     const base64Uid = cloudEvent.data.message.data;
     console.log(`Received CloudEvent: ${base64Uid}`);
 
     const rfidUid = base64Uid
-        ? Buffer.from(base64Uid, 'base64').toString()
+        ? Buffer.from(base64Uid, 'base64').toString().trim()
         : null;
 
     if (!rfidUid) {
@@ -55,7 +55,8 @@ functions.cloudEvent('helloPubSub', cloudEvent => {
 
     try {
         // 2. Find the album in Firestore
-        const albumDetails = findAlbumByRfid(rfidUid);
+        // CORRECTED: Used `await` to ensure the function waits for the Firestore query to complete.
+        const albumDetails = await findAlbumByRfid(rfidUid);
 
         if (!albumDetails) {
             console.log(`No album found in Firestore for RFID: ${rfidUid}`);
@@ -64,7 +65,8 @@ functions.cloudEvent('helloPubSub', cloudEvent => {
         console.log(`Found album: ${albumDetails.artist} - ${albumDetails.album}`);
 
         // 3. Get the album's tracklist from Last.fm
-        const tracks = getAlbumTracks(albumDetails.artist, albumDetails.album);
+        // CORRECTED: Used `await` to wait for the Last.fm API call.
+        const tracks = await getAlbumTracks(albumDetails.artist, albumDetails.album);
 
         if (!tracks || tracks.length === 0) {
             console.log(`Could not find a tracklist for ${albumDetails.artist} - ${albumDetails.album}`);
@@ -73,7 +75,8 @@ functions.cloudEvent('helloPubSub', cloudEvent => {
         console.log(`Found ${tracks.length} tracks. Preparing to scrobble.`);
 
         // 4. Scrobble each track to Last.fm
-        scrobbleTracks(tracks, albumDetails.artist, albumDetails.album);
+        // CORRECTED: Used `await` to ensure the scrobbling process finishes before the function exits.
+        await scrobbleTracks(tracks, albumDetails.artist, albumDetails.album);
 
         console.log('Successfully scrobbled all tracks.');
 
@@ -86,7 +89,6 @@ functions.cloudEvent('helloPubSub', cloudEvent => {
 
 /**
  * Searches across all user-specific 'albums' collections for a matching RFID tag.
- * This is inefficient but necessary without knowing the user ID beforehand.
  * @param {string} rfidUid The RFID UID to search for.
  * @returns {Promise<object|null>} The album data or null if not found.
  */
@@ -122,7 +124,7 @@ async function getAlbumTracks(artist, album) {
             }
         });
 
-        if (response.data.error || !response.data.album || !response.data.album.tracks) {
+        if (response.data.error || !response.data.album || !response.data.album.tracks || !response.data.album.tracks.track) {
             console.error('Last.fm API error while getting tracklist:', response.data.message || 'No track data found.');
             return [];
         }
@@ -133,7 +135,11 @@ async function getAlbumTracks(artist, album) {
         }
         return response.data.album.tracks.track;
     } catch (error) {
-        console.error('Error calling Last.fm album.getinfo:', error.message);
+        console.error(`Error calling Last.fm album.getinfo for ${artist} - ${album}:`, error.message);
+        // If the error is from Axios and contains response data, log it.
+        if (error.response) {
+            console.error('API Response Data:', error.response.data);
+        }
         return [];
     }
 }
@@ -179,7 +185,7 @@ async function scrobbleTracks(tracks, artist, album) {
 
         if (response.data.error) {
             console.error('Last.fm scrobble API error:', response.data.message);
-            throw new Error(response.data.message);
+            throw new Error(`Last.fm scrobble API error (${response.data.error}): ${response.data.message}`);
         }
 
         console.log('Scrobble successful:', response.data.scrobbles);
@@ -195,12 +201,16 @@ async function scrobbleTracks(tracks, artist, album) {
  * @returns {string} The MD5 hash signature.
  */
 function generateApiSignature(params) {
+    // Exclude 'format' from signature generation, as per some interpretations of the docs
+    const paramsForSig = { ...params };
+    delete paramsForSig.format;
+
     // Sort keys alphabetically
-    const sortedKeys = Object.keys(params).sort();
+    const sortedKeys = Object.keys(paramsForSig).sort();
 
     let signatureString = '';
     sortedKeys.forEach(key => {
-        signatureString += key + params[key];
+        signatureString += key + paramsForSig[key];
     });
 
     signatureString += LASTFM_API_SECRET;
