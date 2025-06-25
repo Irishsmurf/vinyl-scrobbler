@@ -1,35 +1,14 @@
 /*
  * Vinyl Scrobbler - ESP32 PN532 NFC Reader & MQTT Publisher
  *
+ * MODIFIED FOR CONTINUOUS OPERATION (NO DEEP SLEEP)
+ *
  * This sketch is for an ESP32 that:
- * 1. Wakes up from deep sleep when a button is pressed.
- * 2. Connects to Wi-Fi.
- * 3. Connects to an MQTT broker.
- * 4. Scans for a PN532 NFC tag using High-Speed UART (HSU).
- * 5. Publishes the tag's UID to a specific MQTT topic.
- * 6. Goes back into deep sleep to conserve battery.
+ * 1. Connects to Wi-Fi and an MQTT broker on startup.
+ * 2. Continuously scans for a PN532 NFC tag.
+ * 3. Publishes the tag's UID to a specific MQTT topic upon successful read.
+ * 4. Stays active and repeats the scanning process.
  *
- * HARDWARE:
- * - ESP32 Development Board
- * - PN532 NFC RFID V3 Module
- * - A momentary push button
- *
- * WIRING (PN532 in HSU Mode -> ESP32):
- * - Make sure the PN532 module's dip switches are set for HSU (UART) mode.
- * (Typically: SW1=ON, SW2=OFF)
- * - 5V   -> 5V (The PN532 board has a regulator)
- * - GND  -> GND
- * - RXD  -> GPIO 17 (ESP32's Serial2 TX)
- * - TXD  -> GPIO 16 (ESP32's Serial2 RX)
- *
- * WIRING (Wake-up Button):
- * - One leg of the button -> GPIO 33 (Configurable)
- * - Other leg of the button -> GND
- * (We will use the internal pull-up resistor on the ESP32)
- *
- * LIBRARIES TO INSTALL via Arduino Library Manager:
- * 1. "Adafruit PN532" by Adafruit
- * 2. "PubSubClient" by Nick O'Leary
  */
 
 // --- LIBRARIES ---
@@ -51,11 +30,6 @@ const char* will_message = "offline";
 boolean will_retain = false;
 byte will_qos = 0;
 
-// -- Hardware Pin Configuration
-// For PN532 HSU, we use a Hardware Serial port (Serial2)
-// RX: GPIO 16, TX: GPIO 17
-#define WAKEUP_PIN GPIO_NUM_33 // Pin to connect the wakeup button to
-
 // --- GLOBAL VARIABLES ---
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -75,11 +49,7 @@ void setup() {
   Serial.begin(115200);
   while (!Serial) { delay(10); }
 
-  Serial.println("\nVinyl Scrobbler waking up...");
-
-  // Configure the wakeup pin with an internal pull-up resistor
-  // The button should connect this pin to GND
-  pinMode(WAKEUP_PIN, INPUT_PULLUP);
+  Serial.println("\nVinyl Scrobbler - Continuous Mode");
 
   // Connect to Wi-Fi
   setup_wifi();
@@ -94,8 +64,8 @@ void setup() {
 
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
-    Serial.println("Didn't find PN532 board. Going to sleep.");
-    esp_deep_sleep_start();
+    Serial.println("Didn't find PN532 board. Halting.");
+    while(1); // Stop forever
   }
 
   // Got ok data, print it out!
@@ -107,29 +77,28 @@ void setup() {
   // Configure the PN532 to read RFID tags
   nfc.SAMConfig();
   
-  Serial.println("NFC Reader Initialized. Hold a card near the reader.");
-
-  // The main logic: connect, scan, publish.
-  scan_and_publish();
-
-  // All tasks are done, time to sleep.
-  Serial.println("Task complete. Going to sleep now.");
-
-  // Configure ESP32 to wake up when the WAKEUP_PIN is pulled LOW
-  esp_sleep_enable_ext0_wakeup(WAKEUP_PIN, 0); // 0 = LOW level trigger
-
-  // Enter deep sleep
-  esp_deep_sleep_start();
+  Serial.println("NFC Reader Initialized. Ready to scan.");
 }
 
-// The loop function is empty because the ESP32 will go into deep sleep
-// and reset upon waking, running setup() again.
+
+// The loop function now contains the core logic and runs continuously.
 void loop() {
-  // This part of the code will never be reached.
+  // Ensure we have a connection to the MQTT broker
+  if (!client.connected()) {
+    reconnect_mqtt();
+  }
+  // Allow the MQTT client to process messages and maintain its connection
+  client.loop();
+
+  // This function will now be called repeatedly
+  scan_and_publish();
+  
+  // A small delay to prevent the loop from running too fast and overwhelming the system.
+  delay(250); 
 }
 
 /**
- * @brief Connects to the Wi-Fi network. Halts on failure after 20 attempts.
+ * @brief Connects to the Wi-Fi network.
  */
 void setup_wifi() {
   delay(10);
@@ -138,14 +107,9 @@ void setup_wifi() {
 
   WiFi.begin(ssid, password);
 
-  int retries = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
-    if (++retries > 20) {
-      Serial.println("\nFailed to connect to WiFi. Going back to sleep.");
-      esp_deep_sleep_start();
-    }
   }
 
   Serial.println("\nWiFi connected!");
@@ -154,80 +118,60 @@ void setup_wifi() {
 }
 
 /**
- * @brief Connects to the MQTT broker. Halts on failure after 5 attempts.
+ * @brief Connects/reconnects to the MQTT broker.
  */
 void reconnect_mqtt() {
-  int retries = 0;
+  // Loop until we're reconnected
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
+    // Attempt to connect with Last Will and Testament
     if (client.connect(mqtt_client_id, mqtt_user, mqtt_password, will_topic, will_qos, will_retain, will_message)) {
       Serial.println("connected");
+      // Publish an "online" message to the status topic
       client.publish(will_topic, "online");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
-      Serial.println(" try again in 2 seconds");
-      retries++;
-      delay(2000);
-    }
-    if (retries > 5) {
-      Serial.println("Failed to connect to MQTT broker. Going to sleep.");
-      esp_deep_sleep_start();
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
     }
   }
 }
 
 /**
- * @brief Main logic function. Scans for an NFC tag and publishes its UID.
+ * @brief Scans for an NFC tag and publishes its UID.
+ * This is now non-blocking and will simply return if no card is found.
  */
 void scan_and_publish() {
-  // Ensure we have an MQTT connection
-  if (!client.connected()) {
-    reconnect_mqtt();
-  }
-  client.loop(); // Allow the MQTT client to process messages
-
-  Serial.println("Scanning for NFC tag...");
-  
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 }; // Buffer to store the returned UID
   uint8_t uidLength;                      // Length of the UID (4 or 7 bytes)
 
-  // Try to find a new card for a few seconds
-  // readPassiveTargetID() has a 1-second timeout by default. We'll try 5 times.
-  bool cardFound = false;
-  for (int i = 0; i < 5; i++) {
-    success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+  // readPassiveTargetID will try to read a card for a given timeout (default 1s)
+  // It is a blocking call for that duration.
+  // The '1000' parameter is the timeout in milliseconds. We'll use a shorter one.
+  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 200);
 
-    if (success) {
-      String uid_str = get_rfid_uid(uid, uidLength);
-      Serial.print("Card detected! UID: ");
-      Serial.println(uid_str);
+  if (success) {
+    String uid_str = get_rfid_uid(uid, uidLength);
+    Serial.print("Card detected! UID: ");
+    Serial.println(uid_str);
 
-      // Publish the UID to the MQTT topic
-      if (client.publish(mqtt_topic, uid_str.c_str())) {
-        Serial.println("UID successfully published to MQTT.");
-        delay(100);
-      } else {
-        Serial.println("Failed to publish UID.");
-      }
-
-      cardFound = true;
-      break; // Exit the loop once a card is found and processed
+    // Publish the UID to the MQTT topic
+    if (client.publish(mqtt_topic, uid_str.c_str())) {
+      Serial.println("UID successfully published to MQTT.");
+      // Add a longer delay after a successful scan to prevent immediate re-scans of the same card
+      delay(2000); 
+    } else {
+      Serial.println("Failed to publish UID.");
     }
-    delay(50); // Small delay between attempts
   }
-
-  if (!cardFound) {
-    Serial.println("No NFC card found in time.");
-  }
+  // If 'success' is false, the function simply ends, and the loop() will call it again.
 }
 
 /**
  * @brief Converts the RFID UID byte array to a readable hex string.
- * @param buffer The byte array containing the UID.
- * @param bufferSize The size of the UID byte array.
- * @return A String object representing the UID in hex format (e.g., "AB CD 12 34").
  */
 String get_rfid_uid(byte *buffer, byte bufferSize) {
   String uid = "";
