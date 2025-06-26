@@ -97,7 +97,7 @@
                     console.log(`NFC Tag Read. Serial Number: ${serialNumber}`);
                     
                     // Format the serial number to match the ESP32 output (e.g., "AB CD 12 34")
-                    const formattedUid = serialNumber.split(':').join(' ').toUpperCase();
+                    const formattedUid = serialNumber.toLowerCase();
                     
                     statusMessage.textContent = 'Tag detected! Scrobbling...';
                     rfidValue.textContent = `UID: ${formattedUid}`;
