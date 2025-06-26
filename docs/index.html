@@ -54,26 +54,75 @@
         </main>
     </div>
 
+    <!-- NEW: Error Modal HTML Structure -->
+    <div id="errorModal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+        <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6 border border-gray-700">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-red-400">An Error Occurred</h2>
+                <button id="closeModalButton" class="text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
+            </div>
+            <div>
+                <p class="text-sm text-gray-400 mb-2">The following error was reported:</p>
+                <!-- Using a <pre> tag preserves formatting like line breaks for stack traces -->
+                <pre id="modalErrorMessage" class="bg-gray-900 text-red-300 p-4 rounded-lg text-sm whitespace-pre-wrap break-words overflow-y-auto max-h-60"></pre>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // --- Get references to page elements ---
         const scanButton = document.getElementById('scanButton');
         const statusMessage = document.getElementById('statusMessage');
         const rfidValue = document.getElementById('rfidValue');
         
-        // IMPORTANT: Replace this with the actual URL of your deployed HTTP Cloud Function
+        // --- Get references to new Modal elements ---
+        const errorModal = document.getElementById('errorModal');
+        const modalErrorMessage = document.getElementById('modalErrorMessage');
+        const closeModalButton = document.getElementById('closeModalButton');
+
+        // --- Configuration ---
         const CLOUD_FUNCTION_URL = 'https://nfc-web-gateway-api-8krdkicx.ew.gateway.dev/scrobble';
 
-        // Check for Web NFC availability
+        // --- NEW: Helper function to show the modal with a specific error message ---
+        function showErrorInModal(errorMessage) {
+            console.error("Displaying error in modal:", errorMessage);
+            modalErrorMessage.textContent = errorMessage;
+            errorModal.classList.remove('hidden');
+        }
+
+        // --- NEW: Event listener to close the modal via the 'X' button ---
+        closeModalButton.addEventListener('click', () => {
+            errorModal.classList.add('hidden');
+        });
+
+        // --- NEW: Optional UX improvement: Close modal if user clicks on the dark overlay ---
+        errorModal.addEventListener('click', (event) => {
+            if (event.target === errorModal) {
+                errorModal.classList.add('hidden');
+            }
+        });
+        
+        // --- NEW: Optional UX improvement: Close modal with the Escape key ---
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !errorModal.classList.contains('hidden')) {
+                errorModal.classList.add('hidden');
+            }
+        });
+
+
+        // --- Check for Web NFC availability on page load ---
         if (!('NDEFReader' in window)) {
             scanButton.disabled = true;
             statusMessage.textContent = 'Web NFC is not supported on this browser.';
-            scanButton.style.backgroundColor = '#4B5563'; // gray
+            scanButton.style.backgroundColor = '#4B5563'; // gray-600
             scanButton.style.cursor = 'not-allowed';
         }
 
+        // --- Main logic when the "Scan Album" button is clicked ---
         scanButton.addEventListener('click', async () => {
             if (CLOUD_FUNCTION_URL === 'YOUR_HTTP_CLOUD_FUNCTION_URL') {
                 statusMessage.textContent = 'Error: Cloud Function URL is not set.';
-                rfidValue.textContent = 'Please update the script.';
+                showErrorInModal('The CLOUD_FUNCTION_URL variable in the script has not been set. Please provide the correct URL for your deployed cloud function.');
                 return;
             }
 
@@ -83,36 +132,35 @@
             try {
                 const reader = new NDEFReader();
                 
-                // The scan() method returns a Promise that resolves when the scan is started.
                 await reader.scan();
                 console.log("NFC Scan started successfully.");
 
                 reader.addEventListener('error', (event) => {
                     console.error('NFC Error:', event.message);
                     statusMessage.textContent = 'An NFC error occurred.';
-                    rfidValue.textContent = event.message;
+                    // UPDATED: Show full error in modal
+                    showErrorInModal(event.message);
                 });
 
                 reader.addEventListener('reading', async ({ message, serialNumber }) => {
                     console.log(`NFC Tag Read. Serial Number: ${serialNumber}`);
-                    
-                    // Format the serial number to match the ESP32 output (e.g., "AB CD 12 34")
                     const formattedUid = serialNumber.toLowerCase();
                     
                     statusMessage.textContent = 'Tag detected! Scrobbling...';
                     rfidValue.textContent = `UID: ${formattedUid}`;
 
-                    // Send the UID to our gateway Cloud Function
                     await triggerScrobble(formattedUid);
                 });
 
             } catch (error) {
                 console.error('Error starting NFC scan:', error);
                 statusMessage.textContent = 'Could not start NFC scan.';
-                rfidValue.textContent = error.toString();
+                // UPDATED: Show full error in modal
+                showErrorInModal(error.toString());
             }
         });
 
+        // --- Function to send the scanned UID to the backend ---
         async function triggerScrobble(uid) {
             try {
                 const response = await fetch(CLOUD_FUNCTION_URL, {
@@ -124,7 +172,8 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`Server responded with ${response.status}`);
+                    const errorBody = await response.text();
+                    throw new Error(`Server responded with ${response.status}. Body: ${errorBody}`);
                 }
 
                 const result = await response.json();
@@ -135,7 +184,8 @@
             } catch (error) {
                 console.error('Error triggering scrobble:', error);
                 statusMessage.textContent = 'Failed to send scrobble request.';
-                rfidValue.textContent = error.toString();
+                // UPDATED: Show full error in modal
+                showErrorInModal(error.toString());
             }
         }
     </script>
