@@ -54,7 +54,7 @@
         </main>
     </div>
 
-    <!-- NEW: Error Modal HTML Structure -->
+    <!-- Error Modal HTML Structure -->
     <div id="errorModal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
         <div class="bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6 border border-gray-700">
             <div class="flex justify-between items-center mb-4">
@@ -63,7 +63,6 @@
             </div>
             <div>
                 <p class="text-sm text-gray-400 mb-2">The following error was reported:</p>
-                <!-- Using a <pre> tag preserves formatting like line breaks for stack traces -->
                 <pre id="modalErrorMessage" class="bg-gray-900 text-red-300 p-4 rounded-lg text-sm whitespace-pre-wrap break-words overflow-y-auto max-h-60"></pre>
             </div>
         </div>
@@ -75,7 +74,7 @@
         const statusMessage = document.getElementById('statusMessage');
         const rfidValue = document.getElementById('rfidValue');
         
-        // --- Get references to new Modal elements ---
+        // --- Get references to Modal elements ---
         const errorModal = document.getElementById('errorModal');
         const modalErrorMessage = document.getElementById('modalErrorMessage');
         const closeModalButton = document.getElementById('closeModalButton');
@@ -83,42 +82,56 @@
         // --- Configuration ---
         const CLOUD_FUNCTION_URL = 'https://nfc-web-gateway-api-8krdkicx.ew.gateway.dev/scrobble';
 
-        // --- NEW: Helper function to show the modal with a specific error message ---
+        /**
+         * Displays an error message in a modal dialog.
+         * @param {string} errorMessage The error message to display.
+         */
         function showErrorInModal(errorMessage) {
             console.error("Displaying error in modal:", errorMessage);
             modalErrorMessage.textContent = errorMessage;
             errorModal.classList.remove('hidden');
         }
 
-        // --- NEW: Event listener to close the modal via the 'X' button ---
-        closeModalButton.addEventListener('click', () => {
-            errorModal.classList.add('hidden');
-        });
-
-        // --- NEW: Optional UX improvement: Close modal if user clicks on the dark overlay ---
-        errorModal.addEventListener('click', (event) => {
-            if (event.target === errorModal) {
+        /**
+         * Attaches event listeners for closing the error modal.
+         */
+        function setupModalListeners() {
+            closeModalButton.addEventListener('click', () => {
                 errorModal.classList.add('hidden');
-            }
-        });
-        
-        // --- NEW: Optional UX improvement: Close modal with the Escape key ---
-        window.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !errorModal.classList.contains('hidden')) {
-                errorModal.classList.add('hidden');
-            }
-        });
+            });
 
+            errorModal.addEventListener('click', (event) => {
+                if (event.target === errorModal) {
+                    errorModal.classList.add('hidden');
+                }
+            });
 
-        // --- Check for Web NFC availability on page load ---
-        if (!('NDEFReader' in window)) {
-            scanButton.disabled = true;
-            statusMessage.textContent = 'Web NFC is not supported on this browser.';
-            scanButton.style.backgroundColor = '#4B5563'; // gray-600
-            scanButton.style.cursor = 'not-allowed';
+            window.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && !errorModal.classList.contains('hidden')) {
+                    errorModal.classList.add('hidden');
+                }
+            });
         }
+        setupModalListeners();
 
-        // --- Main logic when the "Scan Album" button is clicked ---
+
+        /**
+         * Checks for Web NFC availability on page load and updates the UI accordingly.
+         */
+        function checkNfcSupport() {
+            if (!('NDEFReader' in window)) {
+                scanButton.disabled = true;
+                statusMessage.textContent = 'Web NFC is not supported on this browser.';
+                scanButton.style.backgroundColor = '#4B5563'; // gray-600
+                scanButton.style.cursor = 'not-allowed';
+            }
+        }
+        checkNfcSupport();
+
+        /**
+         * Handles the main logic when the "Scan Album" button is clicked.
+         * It validates configuration and initiates the Web NFC scanning process.
+         */
         scanButton.addEventListener('click', async () => {
             if (CLOUD_FUNCTION_URL === 'YOUR_HTTP_CLOUD_FUNCTION_URL') {
                 statusMessage.textContent = 'Error: Cloud Function URL is not set.';
@@ -138,7 +151,6 @@
                 reader.addEventListener('error', (event) => {
                     console.error('NFC Error:', event.message);
                     statusMessage.textContent = 'An NFC error occurred.';
-                    // UPDATED: Show full error in modal
                     showErrorInModal(event.message);
                 });
 
@@ -155,12 +167,15 @@
             } catch (error) {
                 console.error('Error starting NFC scan:', error);
                 statusMessage.textContent = 'Could not start NFC scan.';
-                // UPDATED: Show full error in modal
                 showErrorInModal(error.toString());
             }
         });
 
-        // --- Function to send the scanned UID to the backend ---
+        /**
+         * Sends the scanned UID to the backend Cloud Function to trigger a scrobble.
+         * @param {string} uid The RFID UID of the scanned album tag.
+         * @returns {Promise<void>}
+         */
         async function triggerScrobble(uid) {
             try {
                 const response = await fetch(CLOUD_FUNCTION_URL, {
@@ -184,7 +199,6 @@
             } catch (error) {
                 console.error('Error triggering scrobble:', error);
                 statusMessage.textContent = 'Failed to send scrobble request.';
-                // UPDATED: Show full error in modal
                 showErrorInModal(error.toString());
             }
         }

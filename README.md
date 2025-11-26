@@ -18,6 +18,8 @@ A comprehensive IoT project to scrobble vinyl albums to Last.fm directly from a 
   - [Prerequisites](#prerequisites)
   - [Setup Steps](#setup-steps)
 - [Usage](#usage)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
 ## Overview
 
@@ -98,50 +100,73 @@ The system is composed of several decoupled components that communicate via clou
 
 1.  **Clone the Repository**
     ```bash
-    git clone [https://github.com/](https://github.com/)<your-username>/vinyl-scrobbler.git
+    git clone https://github.com/<your-username>/vinyl-scrobbler.git
     cd vinyl-scrobbler
     ```
 
 2.  **Configure Firebase**
-    -   In your Firebase project, go to **Authentication > Sign-in method** and enable the **Anonymous** provider.
+    -   In your Firebase project, go to **Authentication > Sign-in method** and enable the **Anonymous** provider. This allows the album management UI to work without requiring user accounts.
     -   Go to **Firestore Database** and create a database in Native mode.
-    -   In **Project Settings**, find your Firebase configuration object. You will need this for the Album Management UI, but the provided code is set up to receive it automatically in a compatible environment.
+    -   In **Project Settings**, find your Firebase configuration object. You will need this for the Album Management UI.
 
 3.  **Deploy Web UIs to GitHub Pages**
-    -   Push the repository to GitHub.
+    -   Push the repository to your own GitHub account.
     -   In the repository settings, go to **Pages**.
     -   Set the **Source** to "Deploy from a branch".
     -   Set the **Branch** to `main` and the folder to `/docs`.
-    -   Your sites will be live at `https://<your-username>.github.io/vinyl-scrobbler/` and `.../album-manager/`.
+    -   Your sites will be live at `https://<your-username>.github.io/vinyl-scrobbler/` and `https://<your-username>.github.io/vinyl-scrobbler/album-manager/`.
 
 4.  **Deploy the Cloud Functions**
     -   For each function in `/gcp_functions/`:
         -   Navigate into the directory (e.g., `cd gcp_functions/scrobble_album`).
-        -   Run `npm install`.
+        -   Run `npm install` to install dependencies.
         -   Deploy using the `gcloud` CLI.
-        -   **For `scrobble_album`:** Set the trigger to the Pub/Sub topic (`vinyl/scrobble`). Set the following as environment variables: `LASTFM_API_KEY`, `LASTFM_API_SECRET`, `LASTFM_SESSION_KEY`.
-        -   **For `web_nfc_gateway`:** Set the trigger to HTTP. Note the **Trigger URL** provided after deployment.
+        -   **For `scrobble_album`:**
+            - Set the trigger to the Pub/Sub topic (`vinyl/scrobble`).
+            - Set the following as environment variables: `LASTFM_API_KEY`, `LASTFM_API_SECRET`, `LASTFM_SESSION_KEY`.
+        -   **For `web_nfc_gateway`:**
+            - Set the trigger to HTTP.
+            - Note the **Trigger URL** provided after deployment.
 
 5.  **Connect the PWA to the Gateway**
-    -   Open `docs/index.html`.
-    -   Update the `CLOUD_FUNCTION_URL` constant with the trigger URL of your `web_nfc_gateway` function.
-    -   Commit and push this change.
+    -   Open `docs/index.html` in a text editor.
+    -   Find the `CLOUD_FUNCTION_URL` constant and replace the placeholder URL with the trigger URL of your `web_nfc_gateway` function.
+    -   Commit and push this change to your repository.
 
 6.  **Configure and Flash the ESP32**
     -   Open `/esp32/esp32_rfid_scrobbler.ino` in the Arduino IDE.
-    -   Install the required libraries: `MFRC522` and `PubSubClient`.
-    -   Fill in your Wi-Fi credentials and MQTT broker details at the top of the file.
+    -   Install the required libraries from the Arduino Library Manager: `MFRC522` and `PubSubClient`.
+    -   Create a `credentials.h` file in the same directory (`/esp32/`) to store your sensitive information. It should look like this:
+        ```cpp
+        #define WIFI_SSID "your_wifi_ssid"
+        #define WIFI_PASSWORD "your_wifi_password"
+        #define MQTT_USER "your_mqtt_username"
+        #define MQTT_PASSWORD "your_mqtt_password"
+        ```
+    -   Fill in your Wi-Fi credentials and MQTT broker details in `credentials.h`.
     -   Flash the code to your ESP32.
 
 ## Usage
 
 1.  **Populate Your Collection:**
-    -   Go to the Album Management UI (`.../album-manager/`).
-    -   For each record you own, scan one of your RFID/NFC tags (using either the ESP32 in a "scanning mode" or your phone) to get its UID.
-    -   Add a new entry with the UID, Artist Name, and Album Title.
+    -   Navigate to your deployed Album Management UI.
+    -   You will be prompted to enter your Firebase configuration JSON. Paste it in to connect the UI to your database.
+    -   For each record you own, scan one of your RFID/NFC tags to get its UID. You can use the "Scan RFID" button in the management UI if you are using it on a device with NFC capabilities, or you can use the ESP32 connected to the Arduino IDE's serial monitor.
+    -   Add a new entry in the UI with the UID, Artist Name, and Album Title for each album.
 
 2.  **Scrobble an Album:**
-    -   **With the ESP32:** Press the button on the device, then hold it near the album's RFID tag within 5 seconds. The device will scan, publish, and go back to sleep.
-    -   **With Your Phone:** Open the Web NFC Scrobbler PWA, tap the "Scan Album" button, and then hold your phone to the album's NFC tag.
+    -   **With the ESP32:** Press the button on the device, then hold it near the album's RFID tag within 5 seconds. The device will scan the tag, publish the UID to your MQTT broker, and go back to sleep.
+    -   **With Your Phone:** Open the Web NFC Scrobbler PWA on an NFC-enabled Android phone. Tap the "Scan Album" button, then hold your phone to the album's NFC tag.
 
 In a few moments, the entire album's tracklist will appear in your Last.fm profile history.
+
+## Troubleshooting
+
+- **Web NFC not working:** Ensure you are using a compatible browser (e.g., Chrome on Android) and that your site is served over HTTPS (which GitHub Pages does automatically).
+- **ESP32 connection issues:** Double-check your Wi-Fi and MQTT credentials in `credentials.h`. Use the serial monitor to view debug messages.
+- **Cloud Function errors:** Check the logs for your Cloud Functions in the Google Cloud Console. Common issues include missing environment variables or Firestore permission errors.
+- **Firestore query fails:** The `scrobble_album` function requires a composite index in Firestore to query the `albums` collection group. If you see a `FAILED_PRECONDITION` error in your function logs, the error message will contain a direct link to create the required index in your Firebase console.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a pull request or open an issue for any bugs or feature requests.
