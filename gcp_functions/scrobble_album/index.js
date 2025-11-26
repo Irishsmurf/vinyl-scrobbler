@@ -245,3 +245,11 @@ function generateApiSignature(params) {
 
     return md5(signatureString);
 }
+
+// Exports for testing
+module.exports = {
+    findAlbumByRfid,
+    getAlbumTracks,
+    scrobbleTracks,
+    generateApiSignature
+};
