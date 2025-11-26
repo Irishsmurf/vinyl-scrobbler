@@ -50,7 +50,6 @@
         .btn-danger:hover {
             background-color: #B91C1C; /* bg-red-700 */
         }
-        /* Custom modal for confirmation dialogs */
         .modal-backdrop {
             background-color: rgba(0, 0, 0, 0.75);
         }
@@ -187,7 +186,8 @@
         let docToDeleteId = null;
         
         /**
-         * Main function to start the application. Checks for saved config and decides which view to show.
+         * Main function to start the application. Checks for a saved Firebase configuration
+         * in local storage and decides which view to show (config, login, or main app).
          */
         function main() {
             const savedConfig = localStorage.getItem('firebaseConfig');
@@ -206,8 +206,9 @@
         }
 
         /**
-         * Initializes Firebase with a given config object and sets up auth listeners.
-         * @param {object} firebaseConfig The Firebase config object.
+         * Initializes the Firebase app and authentication services with a given configuration object.
+         * It sets up an authentication state listener to automatically switch views based on user login status.
+         * @param {object} firebaseConfig The Firebase configuration object.
          */
         function initializeAppAndAuth(firebaseConfig) {
             try {
@@ -232,7 +233,10 @@
             }
         }
         
-        // --- View Management ---
+        /**
+         * Displays the Firebase configuration view and hides others.
+         * @param {string} [errorMessage=''] An optional error message to display.
+         */
         function showConfigView(errorMessage = '') {
             configView.classList.remove('hidden');
             loginView.classList.add('hidden');
@@ -240,6 +244,9 @@
             configError.textContent = errorMessage;
         }
 
+        /**
+         * Displays the login view, hides others, and clears any existing Firestore listeners.
+         */
         function showLoginView() {
             configView.classList.add('hidden');
             loginView.classList.remove('hidden');
@@ -251,6 +258,10 @@
             albumList.innerHTML = '';
         }
         
+        /**
+         * Displays the main application view with user information and hides other views.
+         * @param {object} user The authenticated Firebase user object.
+         */
         function showAppView(user) {
             configView.classList.add('hidden');
             loginView.classList.add('hidden');
@@ -259,7 +270,6 @@
                 <div class="font-semibold">${user.displayName}</div>
                 <div class="text-xs text-gray-400">${user.email}</div>
             `;
-            // Check for Web NFC support and update UI accordingly
             if (!('NDEFReader' in window)) {
                 scanRfidBtn.textContent = 'Web NFC Not Supported';
                 scanRfidBtn.disabled = true;
@@ -268,11 +278,11 @@
         }
 
         /**
-         * Sets up the Firestore real-time listener for the logged-in user's albums.
+         * Sets up the Firestore real-time listener for the logged-in user's albums collection.
+         * This function is idempotent and will not create duplicate listeners.
          */
         function setupFirestoreListeners() {
-            if (!userId) return;
-            if (unsubscribeFromAlbums) return;
+            if (!userId || unsubscribeFromAlbums) return;
 
             const appId = 'vinyl-scrobbler-dev';
             const collectionPath = `/artifacts/${appId}/users/${userId}/albums`;
@@ -287,24 +297,9 @@
             });
         }
         
-        // --- Event Listeners ---
-        document.addEventListener('DOMContentLoaded', main);
-
-        saveConfigBtn.addEventListener('click', () => {
-            const configText = configInput.value;
-            if (!configText) {
-                showConfigView("Configuration cannot be empty.");
-                return;
-            }
-            try {
-                JSON.parse(configText); // Just to validate it's proper JSON
-                localStorage.setItem('firebaseConfig', configText);
-                main(); // Re-initialize the app with the new config
-            } catch (e) {
-                showConfigView("Invalid JSON. Please check your configuration.");
-            }
-        });
-        
+        /**
+         * Clears the saved Firebase configuration from local storage and reloads the page.
+         */
         function clearConfigAndReload() {
             if(confirm("Are you sure you want to clear your saved Firebase configuration?")) {
                 localStorage.removeItem('firebaseConfig');
@@ -312,17 +307,10 @@
             }
         }
 
-        clearConfigBtnLogin.addEventListener('click', clearConfigAndReload);
-        clearConfigBtnApp.addEventListener('click', clearConfigAndReload);
-
-        loginBtn.addEventListener('click', () => {
-            signInWithPopup(auth, provider).catch((error) => console.error("Google Sign-In Error", error));
-        });
-
-        logoutBtn.addEventListener('click', () => {
-            signOut(auth).catch((error) => console.error("Sign Out Error", error));
-        });
-
+        /**
+         * Renders the list of albums into the main table.
+         * @param {Array<object>} albums An array of album objects from Firestore.
+         */
         function renderAlbums(albums) {
             albumList.innerHTML = ''; 
             if (albums.length === 0) {
@@ -346,6 +334,10 @@
             });
         }
 
+        /**
+         * Handles the submission of the album form for both creating and updating albums.
+         * @param {Event} e The form submission event.
+         */
         async function handleFormSubmit(e) {
             e.preventDefault();
             const rfid = rfidInput.value.trim();
@@ -372,6 +364,10 @@
             }
         }
 
+        /**
+         * Populates the form with data from a specific album to begin editing.
+         * @param {string} id The Firestore document ID of the album to edit.
+         */
         function startEdit(id) {
             const row = document.querySelector(`button.edit-btn[data-id="${id}"]`).closest('tr');
             const [rfid, artist, album] = Array.from(row.children).slice(0, 3).map(td => td.textContent);
@@ -385,11 +381,18 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
         
+        /**
+         * Shows the delete confirmation modal for a specific album.
+         * @param {string} id The Firestore document ID of the album to delete.
+         */
         function startDelete(id) {
             docToDeleteId = id;
             deleteModal.classList.remove('hidden');
         }
 
+        /**
+         * Deletes the album document from Firestore after confirmation.
+         */
         async function confirmDelete() {
             if (!docToDeleteId) return;
             try {
@@ -402,11 +405,17 @@
             }
         }
 
+        /**
+         * Hides the delete confirmation modal.
+         */
         function closeDeleteModal() {
             docToDeleteId = null;
             deleteModal.classList.add('hidden');
         }
 
+        /**
+         * Resets the album form to its default state for adding a new album.
+         */
         function resetForm() {
             albumForm.reset();
             albumIdInput.value = '';
@@ -415,53 +424,65 @@
             cancelEditBtn.classList.add('hidden');
         }
 
+        // --- Event Listeners Setup ---
+        document.addEventListener('DOMContentLoaded', main);
+        saveConfigBtn.addEventListener('click', () => {
+            const configText = configInput.value;
+            if (!configText) {
+                showConfigView("Configuration cannot be empty.");
+                return;
+            }
+            try {
+                JSON.parse(configText);
+                localStorage.setItem('firebaseConfig', configText);
+                main();
+            } catch (e) {
+                showConfigView("Invalid JSON. Please check your configuration.");
+            }
+        });
+        clearConfigBtnLogin.addEventListener('click', clearConfigAndReload);
+        clearConfigBtnApp.addEventListener('click', clearConfigAndReload);
+        loginBtn.addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch((error) => console.error("Google Sign-In Error", error));
+        });
+        logoutBtn.addEventListener('click', () => {
+            signOut(auth).catch((error) => console.error("Sign Out Error", error));
+        });
         albumForm.addEventListener('submit', handleFormSubmit);
         cancelEditBtn.addEventListener('click', resetForm);
-
-        // --- NEW: Web NFC Scan Implementation ---
         scanRfidBtn.addEventListener('click', async () => {
             if (!('NDEFReader' in window)) {
                 console.error("Web NFC is not supported on this browser.");
                 return;
             }
-            console.log("User clicked scan button");
             try {
                 scanRfidBtn.disabled = true;
                 scanRfidBtn.textContent = 'Scanning...';
                 const reader = new NDEFReader();
                 await reader.scan();
-                console.log("NFC scan started successfully");
-
                 reader.onreadingerror = (event) => {
                     console.error(`Error reading NFC tag: ${event.message}`);
                     scanRfidBtn.disabled = false;
                     scanRfidBtn.textContent = 'Scan RFID';
                 };
-
-                reader.onreading = (event) => {
-                    console.log("NFC tag read successfully");
-                    const serialNumber = event.serialNumber;
+                reader.onreading = ({ serialNumber }) => {
                     if (serialNumber) {
                         rfidInput.value = serialNumber;
                     }
                     scanRfidBtn.disabled = false;
                     scanRfidBtn.textContent = 'Scan RFID';
-                     // Note: The Web NFC spec doesn't provide a way to programmatically stop a scan initiated by reader.scan().
-                    // It will stop automatically after a tag is read or after a timeout. Re-enabling the button is sufficient.
                 };
             } catch (error) {
                 console.error("Error starting NFC scan:", error);
-                alert(`Could not start NFC scan. Please ensure you've given permission and have NFC enabled. Error: ${error.name}`);
+                alert(`Could not start NFC scan. Error: ${error.name}`);
                 scanRfidBtn.disabled = false;
                 scanRfidBtn.textContent = 'Scan RFID';
             }
         });
-
         albumList.addEventListener('click', (e) => {
             if (e.target.classList.contains('edit-btn')) startEdit(e.target.dataset.id);
             if (e.target.classList.contains('delete-btn')) startDelete(e.target.dataset.id);
         });
-        
         confirmDeleteBtn.addEventListener('click', confirmDelete);
         cancelDeleteBtn.addEventListener('click', closeDeleteModal);
         deleteModal.addEventListener('click', (e) => { if(e.target === deleteModal) closeDeleteModal(); });
