@@ -66,8 +66,8 @@ The system is composed of several decoupled components that communicate via clou
 
 ### 3. ESP32 RFID Scrobbler
 
--   **Location:** [`/esp32/esp32_rfid_scrobbler.ino`](./esp32/esp32_rfid_scrobbler.ino)
--   **Description:** An Arduino sketch for an ESP32 connected to an MFRC522 RFID reader. It is optimized for low power consumption using deep sleep.
+-   **Location:** [`/esphome/`](./esphome/) (ESPHome, recommended) or [`/esp32/esp32_rfid_scrobbler.ino`](./esp32/esp32_rfid_scrobbler.ino) (Arduino sketch)
+-   **Description:** Firmware for an ESP32 connected to a PN532 NFC reader over UART. The recommended path is the [ESPHome configuration](./esphome/README.md), which integrates the device with Home Assistant's ESPHome Device Builder (OTA updates, logs, dashboard entities) while publishing to the same MQTT topics. The original Arduino sketch remains available as a standalone alternative.
 
 ### 4. Google Cloud Functions
 
@@ -93,8 +93,8 @@ The system is composed of several decoupled components that communicate via clou
 4.  **Last.fm API Account:** To get an **API Key**, **Shared Secret**, and a user **Session Key**.
     -   Create API Account: [last.fm/api/account/create](https://www.last.fm/api/account/create)
     -   Follow a guide to get a Session Key for your user account.
-5.  **Arduino IDE:** With the ESP32 core installed.
-6.  **Hardware:** An ESP32, MFRC522 RFID reader, button, and RFID/NFC tags.
+5.  **Home Assistant with the ESPHome Device Builder add-on** (recommended) or the **Arduino IDE** with the ESP32 core installed.
+6.  **Hardware:** An ESP32, PN532 NFC reader (wired for UART/HSU), and RFID/NFC tags.
 
 ### Setup Steps
 
@@ -134,8 +134,13 @@ The system is composed of several decoupled components that communicate via clou
     -   Commit and push this change to your repository.
 
 6.  **Configure and Flash the ESP32**
+
+    **Option A - ESPHome / Home Assistant (recommended):**
+    -   Follow the instructions in [`/esphome/README.md`](./esphome/README.md) to set the device up through Home Assistant's ESPHome Device Builder add-on (or the ESPHome CLI). This gives you over-the-air updates, live logs, and Home Assistant entities for the scanner.
+
+    **Option B - Arduino sketch:**
     -   Open `/esp32/esp32_rfid_scrobbler.ino` in the Arduino IDE.
-    -   Install the required libraries from the Arduino Library Manager: `MFRC522` and `PubSubClient`.
+    -   Install the required libraries from the Arduino Library Manager: `PN532` (Seeed Studio) and `PubSubClient`.
     -   Create a `credentials.h` file in the same directory (`/esp32/`) to store your sensitive information. It should look like this:
         ```cpp
         #define WIFI_SSID "your_wifi_ssid"

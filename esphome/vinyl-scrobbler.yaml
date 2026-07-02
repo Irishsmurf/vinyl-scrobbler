@@ -1,0 +1,124 @@
+# Vinyl Scrobbler - ESPHome configuration for Home Assistant's ESPHome Device Builder.
+#
+# Replaces esp32/esp32_rfid_scrobbler.ino with a managed ESPHome device: same
+# wiring (PN532 over UART/HSU on GPIO16/17), same MQTT contract
+# (VinylScrobbler/rfid/reads + VinylScrobbler/status), plus the native Home
+# Assistant API for OTA updates, logs and dashboard entities.
+#
+# See esphome/README.md for setup instructions.
+
+esphome:
+  name: vinyl-scrobbler
+  friendly_name: Vinyl Scrobbler
+  # The vendored pn532_uart component tracks ESPHome 2026.6 internals
+  min_version: "2026.6.0"
+
+esp32:
+  # Adjust to your actual board if needed (https://registry.platformio.org/platforms/platformio/espressif32/boards)
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# PN532 has no native UART support in ESPHome; this repo vendors a small
+# pn532_uart bus implementation (see components/pn532_uart/).
+external_components:
+  - source:
+      type: local
+      path: components
+  # If you only copied this YAML into the Device Builder (without the
+  # components/ directory), pull the component from GitHub instead:
+  # - source: github://Irishsmurf/vinyl-scrobbler@main
+  #   components: [pn532_uart]
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # Fallback hotspot in case Wi-Fi connection fails
+  ap:
+    ssid: "Vinyl-Scrobbler Fallback"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+logger:
+
+# Native Home Assistant API - makes the device adoptable in the ESPHome
+# Device Builder and visible as a Home Assistant device.
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Direct MQTT path to the existing scrobbling backend
+# (MQTT -> Pub/Sub bridge -> Cloud Function). Kept independent of Home
+# Assistant so scrobbling works even when HA is down.
+mqtt:
+  id: mqtt_client
+  broker: coventry.paddez.com
+  port: 1883
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+  # Entities are provided via the native API; don't duplicate them over MQTT
+  discovery: false
+  # Same status contract as the Arduino sketch's LWT
+  birth_message:
+    topic: VinylScrobbler/status
+    payload: online
+  will_message:
+    topic: VinylScrobbler/status
+    payload: offline
+
+# PN532 wiring (unchanged from the Arduino sketch):
+#   PN532 TX -> GPIO16 (ESP32 RX), PN532 RX -> GPIO17 (ESP32 TX),
+#   DIP switches in HSU mode, 115200 baud.
+uart:
+  id: uart_pn532
+  rx_pin: GPIO16
+  tx_pin: GPIO17
+  baud_rate: 115200
+
+pn532_uart:
+  uart_id: uart_pn532
+  update_interval: 1s
+  # on_tag fires once per tag placement (the component tracks tag
+  # present/removed), replacing the sketch's 2-second re-read delay.
+  on_tag:
+    then:
+      - lambda: |-
+          // The backend does an exact Firestore match on lowercase
+          // colon-separated UIDs (the format the old sketch and the Web NFC
+          // PWA produce), so convert ESPHome's "74-10-37-94" style first.
+          std::string uid = x;
+          for (auto &c : uid) {
+            c = (c == '-') ? ':' : ::tolower(c);
+          }
+          id(mqtt_client).publish("VinylScrobbler/rfid/reads", uid);
+          id(last_uid).publish_state(uid);
+          id(tag_present).publish_state(true);
+  on_tag_removed:
+    then:
+      - binary_sensor.template.publish:
+          id: tag_present
+          state: OFF
+
+binary_sensor:
+  - platform: template
+    id: tag_present
+    name: Tag Present
+    device_class: occupancy
+  - platform: status
+    name: Status
+
+text_sensor:
+  - platform: template
+    id: last_uid
+    name: Last Scanned UID
+    icon: mdi:album
+
+sensor:
+  - platform: wifi_signal
+    name: WiFi Signal
+    update_interval: 60s
