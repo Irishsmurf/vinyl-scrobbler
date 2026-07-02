@@ -37,8 +37,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Match the Cloud Functions runtime (nodejs20).
-          node-version: "20"
+          # Match the Cloud Functions runtime (nodejs22).
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: gcp_functions/${{ matrix.function }}/package-lock.json
 

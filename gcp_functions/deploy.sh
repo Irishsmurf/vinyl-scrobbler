@@ -10,7 +10,7 @@
 # Config (override via env vars):
 #   REGION   GCP region for both functions      (default: us-central1)
 #   TOPIC    Pub/Sub topic connecting them      (default: vinyl-scrobble)
-#   RUNTIME  Node.js runtime                     (default: nodejs20)
+#   RUNTIME  Node.js runtime                     (default: nodejs22)
 #
 # Prerequisites:
 #   - gcloud CLI authenticated on the correct project. This repo ships a
@@ -23,7 +23,7 @@ set -euo pipefail
 
 REGION="${REGION:-us-central1}"
 TOPIC="${TOPIC:-vinyl-scrobble}"
-RUNTIME="${RUNTIME:-nodejs20}"
+RUNTIME="${RUNTIME:-nodejs22}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
