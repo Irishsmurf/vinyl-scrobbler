@@ -16,6 +16,7 @@ A comprehensive IoT project to scrobble vinyl albums to Last.fm directly from a 
   - [Google Cloud Functions](#4-google-cloud-functions)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
+  - [Local Google Cloud CLI Setup (Optional)](#local-google-cloud-cli-setup-optional)
   - [Setup Steps](#setup-steps)
 - [Usage](#usage)
 - [Troubleshooting](#troubleshooting)
@@ -95,6 +96,27 @@ The system is composed of several decoupled components that communicate via clou
     -   Follow a guide to get a Session Key for your user account.
 5.  **Home Assistant with the ESPHome Device Builder add-on** (recommended) or the **Arduino IDE** with the ESP32 core installed.
 6.  **Hardware:** An ESP32, PN532 NFC reader (wired for UART/HSU), and RFID/NFC tags.
+
+### Local Google Cloud CLI Setup (Optional)
+
+To prevent deploying resources to the wrong Google Cloud project, you can isolate your `gcloud` settings to this directory using a dedicated configuration profile:
+
+1. **Create and configure the profile**:
+   ```bash
+   gcloud config configurations create vinyl-scrobbler
+   gcloud config set account your-email@gmail.com
+   gcloud config set project rfid-album-scrobblr
+   gcloud config set functions/region us-central1
+   gcloud config set compute/region us-central1
+   ```
+
+2. **Automate profile activation**:
+   Create a `.envrc` file at the root of the repository to switch profiles automatically when entering this directory (requires [direnv](https://direnv.net/)):
+   ```bash
+   echo 'export CLOUDSDK_ACTIVE_CONFIG_NAME="vinyl-scrobbler"' > .envrc
+   direnv allow
+   ```
+   *(If you don't use `direnv`, you can switch profiles manually using `gcloud config configurations activate vinyl-scrobbler`)*.
 
 ### Setup Steps
 

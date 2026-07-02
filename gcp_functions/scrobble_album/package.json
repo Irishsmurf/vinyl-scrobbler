@@ -3,6 +3,9 @@
     "version": "1.0.0",
     "description": "Scrobbles a vinyl album to Last.fm based on an RFID tag.",
     "main": "index.js",
+    "scripts": {
+      "start": "functions-framework --target=helloPubSub --signature-type=cloudevent --port=8083"
+    },
     "dependencies": {
       "@google-cloud/firestore": "^7.0.0",
       "@google-cloud/functions-framework": "^3.0.0",
