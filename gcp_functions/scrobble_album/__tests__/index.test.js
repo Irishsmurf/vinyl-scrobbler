@@ -5,6 +5,7 @@ const {
     findAlbumByRfid,
     getAlbumTracks,
     scrobbleTracks,
+    buildScrobbleTimestamps,
     generateApiSignature
 } = require('../index'); // Adjust the path to your index.js
 
@@ -178,6 +179,49 @@ describe('Vinyl Scrobbler Cloud Function', () => {
             expect(postData.get('method')).toBe('track.scrobble');
         });
 
+        it('should split tracklists longer than 50 tracks into multiple requests', async () => {
+            const tracks = Array.from({ length: 55 }, (_, i) => ({ name: `Track ${i + 1}` }));
+
+            mockAxios.onPost().reply(200, {
+                scrobbles: { '@attr': { accepted: 50, ignored: 0 } }
+            });
+
+            await scrobbleTracks(tracks, 'Artist', 'Album');
+
+            expect(mockAxios.history.post.length).toBe(2);
+
+            const firstBatch = new URLSearchParams(mockAxios.history.post[0].data);
+            expect(firstBatch.get('track[0]')).toBe('Track 1');
+            expect(firstBatch.get('track[49]')).toBe('Track 50');
+            expect(firstBatch.get('track[50]')).toBeNull();
+
+            // The second batch re-indexes from zero.
+            const secondBatch = new URLSearchParams(mockAxios.history.post[1].data);
+            expect(secondBatch.get('track[0]')).toBe('Track 51');
+            expect(secondBatch.get('track[4]')).toBe('Track 55');
+        });
+
+    });
+
+    describe('buildScrobbleTimestamps', () => {
+        it('should place tracks in ascending order and finish at the reference time', () => {
+            const now = 1_000_000;
+            const tracks = [{ duration: '200' }, { duration: '300' }, { duration: '100' }];
+
+            const timestamps = buildScrobbleTimestamps(tracks, now);
+
+            expect(timestamps).toEqual([now - 600, now - 400, now - 100]);
+        });
+
+        it('should fall back to a default duration when one is missing or invalid', () => {
+            const now = 1_000_000;
+            const tracks = [{ duration: '0' }, { name: 'no duration' }];
+
+            const timestamps = buildScrobbleTimestamps(tracks, now);
+
+            // 180s default applied to both tracks -> total 360s.
+            expect(timestamps).toEqual([now - 360, now - 180]);
+        });
     });
 
     describe('generateApiSignature', () => {
