@@ -42,6 +42,8 @@ captive_portal:
 
 logger:
 
+debug:
+
 # Native Home Assistant API - makes the device adoptable in the ESPHome
 # Device Builder and visible as a Home Assistant device.
 api:
