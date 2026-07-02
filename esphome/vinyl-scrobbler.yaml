@@ -98,11 +98,34 @@ pn532_uart:
           id(mqtt_client).publish("VinylScrobbler/rfid/reads", uid);
           id(last_uid).publish_state(uid);
           id(tag_present).publish_state(true);
+
+      # Trigger Home Assistant's native Tag engine
+      - homeassistant.tag_scanned:
+          tag: !lambda 'return x;'
+
+      # Optional physical feedback examples (uncomment and define pins/outputs to use):
+      # - switch.turn_on: buzzer
+      # - delay: 100ms
+      # - switch.turn_off: buzzer
+      # - light.turn_on:
+      #     id: indicator_led
+      #     brightness: 100%
+      #     transition_length: 50ms
+      # - delay: 200ms
+      # - light.turn_off:
+      #     id: indicator_led
+      #     transition_length: 200ms
+
   on_tag_removed:
     then:
       - binary_sensor.template.publish:
           id: tag_present
           state: OFF
+
+# Reboot button to manage the device from Home Assistant UI
+button:
+  - platform: restart
+    name: "Restart Scanner"
 
 binary_sensor:
   - platform: template
@@ -113,6 +136,14 @@ binary_sensor:
     name: Status
 
 text_sensor:
+  # Diagnostic info exposed to HA
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "Connected SSID"
+    mac_address:
+      name: "MAC Address"
   - platform: template
     id: last_uid
     name: Last Scanned UID
@@ -122,3 +153,9 @@ sensor:
   - platform: wifi_signal
     name: WiFi Signal
     update_interval: 60s
+  - platform: uptime
+    name: Uptime
+    update_interval: 60s
+  - platform: debug
+    free:
+      name: "Free Heap Memory"
