@@ -6,3 +6,9 @@ node_modules/
 /.DS_Store
 /.idea/
 /.cache/
+
+# ESPHome
+esphome/secrets.yaml
+esphome/.esphome/
+esphome/build/
+__pycache__/
