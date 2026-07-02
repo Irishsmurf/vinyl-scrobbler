@@ -152,7 +152,7 @@ async function getAlbumTracks(artist, album) {
 function buildScrobbleTimestamps(tracks, nowSeconds = Math.floor(Date.now() / 1000)) {
     const durations = tracks.map((track) => {
         const seconds = Number(track && track.duration);
-        return Number.isFinite(seconds) && seconds > 0 ? seconds : DEFAULT_TRACK_DURATION_SECONDS;
+        return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : DEFAULT_TRACK_DURATION_SECONDS;
     });
 
     const totalDuration = durations.reduce((sum, seconds) => sum + seconds, 0);
@@ -227,13 +227,21 @@ async function scrobbleBatch(tracks, timestamps, artist, album) {
             throw new Error(`Last.fm scrobble API error (${response.data.error}): ${response.data.message}`);
         }
 
-        const attr = (response.data && response.data.scrobbles && response.data.scrobbles['@attr']) || {};
+        // A response without the expected `scrobbles` payload indicates an
+        // unexpected/failed call. Throw so Pub/Sub retries rather than silently
+        // acking the message and losing the scrobble.
+        if (!response.data || !response.data.scrobbles) {
+            throw new Error('Last.fm scrobble response is missing expected "scrobbles" data.');
+        }
+
+        const attr = response.data.scrobbles['@attr'] || {};
         return {
             accepted: Number(attr.accepted) || 0,
             ignored: Number(attr.ignored) || 0
         };
     } catch (error) {
         console.error('Error calling Last.fm track.scrobble:', error.message);
+        if (error.response) console.error('API Response Data:', error.response.data);
         throw error;
     }
 }
