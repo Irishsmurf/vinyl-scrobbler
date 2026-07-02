@@ -1,0 +1,51 @@
+# CI for the Cloud Functions.
+#
+# Catches the classes of failure that otherwise only surface during
+# `gcloud functions deploy` (Cloud Build):
+#   - package-lock.json out of sync with package.json  -> `npm ci` fails
+#   - broken dependencies / uninstallable tree          -> `npm ci` fails
+#   - regressions in the function logic                 -> `npm test` fails
+#
+# Runs on every push/PR that touches the functions.
+name: Functions CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gcp_functions/**"
+      - ".github/workflows/functions-ci.yml"
+  pull_request:
+    paths:
+      - "gcp_functions/**"
+      - ".github/workflows/functions-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        function:
+          - scrobble_album
+          - web_nfc_gateway
+    defaults:
+      run:
+        working-directory: gcp_functions/${{ matrix.function }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Match the Cloud Functions runtime (nodejs20).
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: gcp_functions/${{ matrix.function }}/package-lock.json
+
+      # `npm ci` reproduces Cloud Build's install exactly and fails hard if the
+      # lockfile drifts from package.json — the exact failure that broke the deploy.
+      - name: Install (reproducible)
+        run: npm ci
+
+      - name: Test
+        run: npm test --if-present

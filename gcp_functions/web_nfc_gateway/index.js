@@ -13,7 +13,7 @@ const { PubSub } = require('@google-cloud/pubsub');
 const pubSubClient = new PubSub();
 
 // The target Pub/Sub topic that the main scrobbler function is subscribed to.
-const topicName = 'vinyl/scrobble';
+const topicName = 'vinyl-scrobble';
 
 /**
  * An HTTP-triggered Cloud Function that receives an RFID UID and publishes it to Pub/Sub.

@@ -22,6 +22,9 @@ A comprehensive IoT project to scrobble vinyl albums to Last.fm directly from a 
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
+> **Deploying?** See **[DEPLOY.md](./DEPLOY.md)** for the full architecture, exact
+> configuration values, and end-to-end deploy steps.
+
 ## Overview
 
 This project bridges the gap between a physical record collection and digital listening history. By placing an RFID/NFC tag on each vinyl album sleeve, you can instantly scrobble the entire album to your Last.fm profile by scanning it with either a custom-built ESP32 device or your Android phone.
@@ -139,16 +142,19 @@ To prevent deploying resources to the wrong Google Cloud project, you can isolat
     -   Your sites will be live at `https://<your-username>.github.io/vinyl-scrobbler/` and `https://<your-username>.github.io/vinyl-scrobbler/album-manager/`.
 
 4.  **Deploy the Cloud Functions**
-    -   For each function in `/gcp_functions/`:
-        -   Navigate into the directory (e.g., `cd gcp_functions/scrobble_album`).
-        -   Run `npm install` to install dependencies.
-        -   Deploy using the `gcloud` CLI.
-        -   **For `scrobble_album`:**
-            - Set the trigger to the Pub/Sub topic (`vinyl/scrobble`).
-            - Set the following as environment variables: `LASTFM_API_KEY`, `LASTFM_API_SECRET`, `LASTFM_SESSION_KEY`.
-        -   **For `web_nfc_gateway`:**
-            - Set the trigger to HTTP.
-            - Note the **Trigger URL** provided after deployment.
+    -   Add your Last.fm credentials for the scrobbler:
+        ```bash
+        cp gcp_functions/scrobble_album/.env.yaml.example gcp_functions/scrobble_album/.env.yaml
+        # edit .env.yaml and fill in LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_SESSION_KEY
+        ```
+    -   Deploy both Gen 2 functions with the helper script (it creates the
+        `vinyl-scrobble` Pub/Sub topic if needed and prints the gateway URL):
+        ```bash
+        cd gcp_functions
+        ./deploy.sh
+        ```
+    -   See [`gcp_functions_guide.md`](./gcp_functions_guide.md) for local testing,
+        per-function deploys, and manual `gcloud` commands.
 
 5.  **Connect the PWA to the Gateway**
     -   Open `docs/index.html` in a text editor.

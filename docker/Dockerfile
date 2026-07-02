@@ -13,9 +13,12 @@ COPY requirements.txt .
 # Use --no-cache-dir to reduce image size
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application script and credentials into the container
+# Copy the application script into the container
 COPY mqtt_to_pubsub.py .
-COPY credentials.json .
 
-# Run the script when the container launches
-CMD ["python", "mqtt_to_pubsub.py"]
+# The service-account key is NOT baked into the image. Mount it at runtime and
+# point Application Default Credentials at it (see docker/README.md).
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+
+# Run unbuffered so logs stream to `docker logs` in real time.
+CMD ["python", "-u", "mqtt_to_pubsub.py"]
