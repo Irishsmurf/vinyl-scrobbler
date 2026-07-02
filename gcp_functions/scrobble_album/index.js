@@ -23,6 +23,12 @@ const LASTFM_API_SECRET = process.env.LASTFM_API_SECRET;
 const LASTFM_SESSION_KEY = process.env.LASTFM_SESSION_KEY;
 const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 
+// Last.fm rejects a track.scrobble request carrying more than 50 tracks, so
+// longer tracklists (box sets, compilations) must be split into batches.
+const MAX_SCROBBLES_PER_REQUEST = 50;
+// Fallback play length used when Last.fm omits a track's duration.
+const DEFAULT_TRACK_DURATION_SECONDS = 180;
+
 /**
  * The main entry point for the Cloud Function, triggered by a Pub/Sub message.
  * It orchestrates the process of decoding the UID, finding the album, fetching tracks, and scrobbling.
@@ -136,18 +142,66 @@ async function getAlbumTracks(artist, album) {
 }
 
 /**
- * Scrobbles an array of tracks to a user's Last.fm profile. It calculates timestamps
- * for each track to ensure they appear in the correct order.
+ * Builds a scrobble timestamp for each track so the album reads back in play
+ * order and finishes at `nowSeconds`. Real per-track durations from the Last.fm
+ * tracklist are used when present, falling back to a nominal length otherwise.
+ * @param {Array<object>} tracks Track objects, optionally carrying a `duration` (seconds).
+ * @param {number} [nowSeconds] Reference end time in Unix seconds; defaults to now.
+ * @returns {Array<number>} Unix timestamps (the start time of each track), aligned to `tracks`.
+ */
+function buildScrobbleTimestamps(tracks, nowSeconds = Math.floor(Date.now() / 1000)) {
+    const durations = tracks.map((track) => {
+        const seconds = Number(track && track.duration);
+        return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : DEFAULT_TRACK_DURATION_SECONDS;
+    });
+
+    const totalDuration = durations.reduce((sum, seconds) => sum + seconds, 0);
+
+    let startTime = nowSeconds - totalDuration;
+    return durations.map((seconds) => {
+        const timestamp = startTime;
+        startTime += seconds;
+        return timestamp;
+    });
+}
+
+/**
+ * Scrobbles an array of tracks to a user's Last.fm profile. Timestamps are
+ * derived so the tracks appear in play order, and the request is split into
+ * batches to respect Last.fm's per-request track limit.
  * @param {Array<object>} tracks An array of track objects from the Last.fm API.
  * @param {string} artist The name of the artist for all tracks.
  * @param {string} album The title of the album for all tracks.
  * @returns {Promise<void>}
- * @throws {Error} Throws an error if the Last.fm API call fails.
+ * @throws {Error} Throws an error if any Last.fm API call fails.
  */
 async function scrobbleTracks(tracks, artist, album) {
-    const now = Math.floor(Date.now() / 1000);
-    const timestamps = tracks.map((_, i) => now - (tracks.length - i - 1) * 180); // ~3 min per track
+    const timestamps = buildScrobbleTimestamps(tracks);
 
+    let accepted = 0;
+    let ignored = 0;
+
+    for (let offset = 0; offset < tracks.length; offset += MAX_SCROBBLES_PER_REQUEST) {
+        const batch = tracks.slice(offset, offset + MAX_SCROBBLES_PER_REQUEST);
+        const batchTimestamps = timestamps.slice(offset, offset + MAX_SCROBBLES_PER_REQUEST);
+        const result = await scrobbleBatch(batch, batchTimestamps, artist, album);
+        accepted += result.accepted;
+        ignored += result.ignored;
+    }
+
+    console.log(`Scrobble complete for ${artist} - ${album}: ${accepted} accepted, ${ignored} ignored.`);
+}
+
+/**
+ * Scrobbles a single batch of up to MAX_SCROBBLES_PER_REQUEST tracks.
+ * @param {Array<object>} tracks Track objects for this batch.
+ * @param {Array<number>} timestamps Timestamps aligned to `tracks`.
+ * @param {string} artist The name of the artist for all tracks.
+ * @param {string} album The title of the album for all tracks.
+ * @returns {Promise<{accepted: number, ignored: number}>} Counts reported by Last.fm.
+ * @throws {Error} Throws an error if the Last.fm API call fails.
+ */
+async function scrobbleBatch(tracks, timestamps, artist, album) {
     const params = {
         method: 'track.scrobble',
         sk: LASTFM_SESSION_KEY,
@@ -172,19 +226,22 @@ async function scrobbleTracks(tracks, artist, album) {
         if (response.data.error) {
             throw new Error(`Last.fm scrobble API error (${response.data.error}): ${response.data.message}`);
         }
-        
-        const scrobbles = response.data.scrobbles.scrobble;
-        const scrobblesArray = Array.isArray(scrobbles) ? scrobbles : [scrobbles];
-        
-        console.log(`Scrobble successful. Logged ${scrobblesArray.length} tracks:`);
-        scrobblesArray.forEach(scrobble => {
-            const trackName = scrobble.track['#text'];
-            const artistName = scrobble.artist['#text'];
-            console.log(`  - "${trackName}" by ${artistName}`);
-        });
 
+        // A response without the expected `scrobbles` payload indicates an
+        // unexpected/failed call. Throw so Pub/Sub retries rather than silently
+        // acking the message and losing the scrobble.
+        if (!response.data || !response.data.scrobbles) {
+            throw new Error('Last.fm scrobble response is missing expected "scrobbles" data.');
+        }
+
+        const attr = response.data.scrobbles['@attr'] || {};
+        return {
+            accepted: Number(attr.accepted) || 0,
+            ignored: Number(attr.ignored) || 0
+        };
     } catch (error) {
         console.error('Error calling Last.fm track.scrobble:', error.message);
+        if (error.response) console.error('API Response Data:', error.response.data);
         throw error;
     }
 }
@@ -214,5 +271,6 @@ module.exports = {
     findAlbumByRfid,
     getAlbumTracks,
     scrobbleTracks,
+    buildScrobbleTimestamps,
     generateApiSignature
 };
